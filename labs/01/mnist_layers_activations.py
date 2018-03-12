@@ -25,6 +25,12 @@ class Network:
             # TODO: add args.layers hidden layers with activations given by
             # args.activation and store results in hidden_layer. Possible
             # activations are none, relu, tanh and sigmoid.
+            hidden_layer = flattened_images
+            for i in range(args.layers):
+                hidden_layers = tf.layers.dense(
+                    hidden_layer, args.hidden_layer, activation=args.activation, name="hidden_layer" + str(i)
+                )
+
             output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
             self.predictions = tf.argmax(output_layer, axis=1)
 
@@ -58,7 +64,10 @@ class Network:
         self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels})
 
     def evaluate(self, dataset, images, labels):
-        self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
+        res = self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
+        if dataset == "test":
+            print(res)
+            return res[0]
 
 
 if __name__ == "__main__":
@@ -108,7 +117,8 @@ if __name__ == "__main__":
             network.train(images, labels)
 
         network.evaluate("dev", mnist.validation.images, mnist.validation.labels)
-    network.evaluate("test", mnist.test.images, mnist.test.labels)
+    acc = etwork.evaluate("test", mnist.test.images, mnist.test.labels)
 
     # TODO: Compute and print accuracy on the test set. Print accuracy as
     # percentage rounded on two decimal places, e.g., 91.23
+    print(acc)
