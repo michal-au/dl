@@ -2,6 +2,14 @@
 import numpy as np
 import tensorflow as tf
 
+
+activation_map = {
+    'none': None,
+    'relu': tf.nn.relu,
+    'tanh': tf.nn.tanh,
+    'sigmoid': tf.nn.sigmoid,
+}
+
 class Network:
     WIDTH = 28
     HEIGHT = 28
@@ -25,6 +33,13 @@ class Network:
             # TODO: add args.layers hidden layers with activations given by
             # args.activation and store results in hidden_layer. Possible
             # activations are none, relu, tanh and sigmoid.
+            hidden_layer = flattened_images
+            for i in range(args.layers):
+                hidden_layer = tf.layers.dense(
+                    hidden_layer, args.hidden_layer, activation=activation_map[args.activation],
+                    name="hidden_layer_" + str(i)
+                )
+
             output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
             self.predictions = tf.argmax(output_layer, axis=1)
 
@@ -35,6 +50,7 @@ class Network:
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
+            self.accuracy = accuracy
             confusion_matrix = tf.reshape(tf.confusion_matrix(self.labels, self.predictions,
                                                               weights=tf.not_equal(self.labels, self.predictions), dtype=tf.float32),
                                           [1, self.LABELS, self.LABELS, 1])
@@ -59,6 +75,9 @@ class Network:
 
     def evaluate(self, dataset, images, labels):
         self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
+        if dataset == "test":
+            acc = self.session.run(self.accuracy, {self.images: images, self.labels: labels})
+            return acc
 
 
 if __name__ == "__main__":
@@ -108,7 +127,9 @@ if __name__ == "__main__":
             network.train(images, labels)
 
         network.evaluate("dev", mnist.validation.images, mnist.validation.labels)
-    network.evaluate("test", mnist.test.images, mnist.test.labels)
+    acc = network.evaluate("test", mnist.test.images, mnist.test.labels)
 
     # TODO: Compute and print accuracy on the test set. Print accuracy as
     # percentage rounded on two decimal places, e.g., 91.23
+    print("{:.2f}".format(acc * 100))
+
