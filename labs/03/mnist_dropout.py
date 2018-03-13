@@ -19,20 +19,24 @@ class Network:
             # Inputs
             self.images = tf.placeholder(tf.float32, [None, self.WIDTH, self.HEIGHT, 1], name="images")
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
+            self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
             # Computation
             flattened_images = tf.layers.flatten(self.images, name="flatten")
             hidden_layer = tf.layers.dense(flattened_images, args.hidden_layer, activation=tf.nn.relu, name="hidden_layer")
-            output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
+
+            # TODO: Implement dropout on the hidden layer using tf.layers.dropout,
+            # with using dropout date of args.dropout. The dropout must be active only
+            # during training -- use `self.is_training` placeholder to control the
+            # `training` argument of tf.layers.dropout. Store the result to `hidden_layer_dropout`.
+
+            output_layer = tf.layers.dense(hidden_layer_dropout, self.LABELS, activation=None, name="output_layer")
             self.predictions = tf.argmax(output_layer, axis=1)
 
             # Training
             loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer, scope="loss")
             global_step = tf.train.create_global_step()
-
-            # TODO: Create `optimizer` according to arguments ("SGD", "SGD" with momentum, or "Adam"),
-            # utilizing specified learning rate according to args.learning_rate and args.learning_rate_final.
-            self.training = optimizer.minimize(loss, global_step=global_step, name="training")
+            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
@@ -43,7 +47,8 @@ class Network:
                                            tf.contrib.summary.scalar("train/accuracy", accuracy)]
             with summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 for dataset in ["dev", "test"]:
-                    self.summaries[dataset] = tf.contrib.summary.scalar(dataset + "/accuracy", accuracy)
+                    self.summaries[dataset] = [tf.contrib.summary.scalar(dataset + "/loss", loss),
+                                               tf.contrib.summary.scalar(dataset + "/accuracy", accuracy)]
 
             # Initialize variables
             self.session.run(tf.global_variables_initializer())
@@ -69,13 +74,11 @@ if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", default=50, type=int, help="Batch size.")
-    parser.add_argument("--epochs", default=20, type=int, help="Number of epochs.")
+    parser.add_argument("--dropout", default=0., type=float, help="Dropout rate.")
+    parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
     parser.add_argument("--hidden_layer", default=200, type=int, help="Size of the hidden layer.")
-    parser.add_argument("--learning_rate", default=0.01, type=float, help="Initial learning rate.")
-    parser.add_argument("--learning_rate_final", default=None, type=float, help="Final learning rate.")
-    parser.add_argument("--momentum", default=None, type=float, help="Momentum.")
-    parser.add_argument("--optimizer", default="SGD", type=str, help="Optimizer to use.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+    parser.add_argument("--training_size", default=5000, type=int, help="Number of training images.")
     args = parser.parse_args()
 
     # Create logdir name
@@ -94,7 +97,7 @@ if __name__ == "__main__":
     #
     # Additionally, loading of the dataset prints to stdout -- this loading message
     # is part of expected output when evaluating on ReCodEx.
-    mnist = mnist.input_data.read_data_sets(".", reshape=False, seed=42)
+    mnist = mnist.input_data.read_data_sets(".", validation_size=60000-args.training_size, reshape=False, seed=42)
     batches_per_epoch = mnist.train.num_examples // args.batch_size
 
     # Construct the network
