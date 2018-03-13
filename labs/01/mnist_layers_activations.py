@@ -2,6 +2,14 @@
 import numpy as np
 import tensorflow as tf
 
+
+activation_map = {
+    'none': None,
+    'relu': tf.nn.relu,
+    'tanh': tf.nn.tanh,
+    'sigmoid': tf.nn.sigmoid,
+}
+
 class Network:
     WIDTH = 28
     HEIGHT = 28
@@ -27,8 +35,9 @@ class Network:
             # activations are none, relu, tanh and sigmoid.
             hidden_layer = flattened_images
             for i in range(args.layers):
-                hidden_layers = tf.layers.dense(
-                    hidden_layer, args.hidden_layer, activation=args.activation, name="hidden_layer" + str(i)
+                hidden_layer = tf.layers.dense(
+                    hidden_layer, args.hidden_layer, activation=activation_map[args.activation],
+                    name="hidden_layer_" + str(i)
                 )
 
             output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
@@ -41,6 +50,7 @@ class Network:
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
+            self.accuracy = accuracy
             confusion_matrix = tf.reshape(tf.confusion_matrix(self.labels, self.predictions,
                                                               weights=tf.not_equal(self.labels, self.predictions), dtype=tf.float32),
                                           [1, self.LABELS, self.LABELS, 1])
@@ -64,10 +74,10 @@ class Network:
         self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels})
 
     def evaluate(self, dataset, images, labels):
-        res = self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
+        self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
         if dataset == "test":
-            print(res)
-            return res[0]
+            acc = self.session.run(self.accuracy, {self.images: images, self.labels: labels})
+            return acc
 
 
 if __name__ == "__main__":
@@ -117,8 +127,9 @@ if __name__ == "__main__":
             network.train(images, labels)
 
         network.evaluate("dev", mnist.validation.images, mnist.validation.labels)
-    acc = etwork.evaluate("test", mnist.test.images, mnist.test.labels)
+    acc = network.evaluate("test", mnist.test.images, mnist.test.labels)
 
     # TODO: Compute and print accuracy on the test set. Print accuracy as
     # percentage rounded on two decimal places, e.g., 91.23
-    print(acc)
+    print("{:.2f}".format(acc * 100))
+
