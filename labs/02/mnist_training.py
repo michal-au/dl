@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
 import tensorflow as tf
+import math
+
 
 class Network:
     WIDTH = 28
@@ -14,7 +16,7 @@ class Network:
         self.session = tf.Session(graph = graph, config=tf.ConfigProto(inter_op_parallelism_threads=threads,
                                                                        intra_op_parallelism_threads=threads))
 
-    def construct(self, args):
+    def construct(self, args, batches_per_epoch):
         with self.session.graph.as_default():
             # Inputs
             self.images = tf.placeholder(tf.float32, [None, self.WIDTH, self.HEIGHT, 1], name="images")
@@ -32,29 +34,54 @@ class Network:
 
             # TODO: Create `optimizer` according to arguments ("SGD", "SGD" with momentum, or "Adam"),
             # utilizing specified learning rate according to args.learning_rate and args.learning_rate_final.
+            optimizer_map = {
+                "SGD": tf.train.GradientDescentOptimizer,
+                "Adam": tf.train.AdamOptimizer,
+            }
+            # self.learning_rate = tf.placeholder(tf.float32, [])
+            learning_rate = tf.train.exponential_decay(
+                args.learning_rate,
+                global_step,
+                batches_per_epoch,
+                math.pow(args.learning_rate_final / args.learning_rate, 1 / (args.epochs - 1)),
+                staircase=True
+            ) if args.learning_rate_final else args.learning_rate
+            if args.momentum:
+                optimizer = tf.train.MomentumOptimizer(learning_rate, args.momentum)
+            else:
+                optimizer = optimizer_map[args.optimizer](learning_rate)
             self.training = optimizer.minimize(loss, global_step=global_step, name="training")
 
             # Summaries
-            accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
+            self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
             summary_writer = tf.contrib.summary.create_file_writer(args.logdir, flush_millis=10 * 1000)
             self.summaries = {}
             with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(100):
                 self.summaries["train"] = [tf.contrib.summary.scalar("train/loss", loss),
-                                           tf.contrib.summary.scalar("train/accuracy", accuracy)]
+                                           tf.contrib.summary.scalar("train/accuracy", self.accuracy)]
             with summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 for dataset in ["dev", "test"]:
-                    self.summaries[dataset] = tf.contrib.summary.scalar(dataset + "/accuracy", accuracy)
+                    self.summaries[dataset] = tf.contrib.summary.scalar(dataset + "/accuracy", self.accuracy)
 
             # Initialize variables
             self.session.run(tf.global_variables_initializer())
             with summary_writer.as_default():
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
-    def train(self, images, labels):
+    def train(self, images, labels, args, epoch):
+        # learning_rate = args.learning_rate
+        # if args.learning_rate_final and args.epochs > 1:
+        #     learning_rate = learning_rate * math.pow(args.learning_rate_final / args.learning_rate, epoch / (args.epochs - 1))
+        #
+        # self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels, self.learning_rate: learning_rate})
+        # return learning_rate
         self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels})
 
     def evaluate(self, dataset, images, labels):
-        self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
+        if dataset == "test":
+            return self.session.run([self.accuracy, self.summaries[dataset]], {self.images: images, self.labels: labels})
+        else:
+            self.session.run(self.summaries[dataset], {self.images: images, self.labels: labels})
 
 
 if __name__ == "__main__":
@@ -99,16 +126,16 @@ if __name__ == "__main__":
 
     # Construct the network
     network = Network(threads=args.threads)
-    network.construct(args)
+    network.construct(args, batches_per_epoch)
 
     # Train
     for i in range(args.epochs):
         for b in range(batches_per_epoch):
             images, labels = mnist.train.next_batch(args.batch_size)
-            network.train(images, labels)
-
+            lr = network.train(images, labels, args, i)
+        # print(i, lr)
         network.evaluate("dev", mnist.validation.images, mnist.validation.labels)
-    network.evaluate("test", mnist.test.images, mnist.test.labels)
+    accuracy = network.evaluate("test", mnist.test.images, mnist.test.labels)[0]
 
     # TODO: Compute accuracy on the test set and print it as percentage rounded
     # to two decimal places.
