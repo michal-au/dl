@@ -19,7 +19,9 @@ class Network:
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
 
             # TODO: Define the model, with the output layers for actions in `output_layer`
-
+            hidden_layer = tf.layers.dense(self.observations, 4, activation=tf.nn.tanh, name="hidden_layer")
+            # hidden_layer2 = tf.layers.dense(hidden_layer, 4, activation=tf.nn.tanh, name="hidden_layer2")
+            output_layer = tf.layers.dense(hidden_layer, self.ACTIONS, activation=None, name="output_layer")
             self.actions = tf.argmax(output_layer, axis=1, name="actions")
 
             # Global step
@@ -29,7 +31,7 @@ class Network:
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.actions), tf.float32))
-            summary_writer = tf.contrib.summary.create_file_writer(args.logdir, flush_millis=10 * 1000)
+            summary_writer = tf.contrib.summary.create_file_writer(args.logdir, flush_millis=10)
             with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(100):
                 self.summaries = [tf.contrib.summary.scalar("train/loss", loss),
                                   tf.contrib.summary.scalar("train/accuracy", accuracy)]
@@ -67,7 +69,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Create logdir name
-    args.logdir = "logs/{}-{}-{}".format(
+    args.logdir = "gymlogs/{}-{}-{}".format(
         os.path.basename(__file__),
         datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
         ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value) for key, value in sorted(vars(args).items())))
@@ -89,6 +91,8 @@ if __name__ == "__main__":
 
     # Train
     for i in range(args.epochs):
+        for o in range(len(observations)//10):
+            network.train(observations[(o*10): (o+1) * 10], labels[(o*10): (o+1) * 10])
         # TODO: Train for an epoch
 
     # Save the network
