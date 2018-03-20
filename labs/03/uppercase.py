@@ -93,20 +93,37 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args):
+        activations_map = {
+            "relu": tf.nn.relu,
+            "tanh": tf.nn.tanh,
+        }
         with self.session.graph.as_default():
             # Inputs
             self.windows = tf.placeholder(tf.int32, [None, 2 * args.window + 1], name="windows")
-            self.labels = tf.placeholder(tf.bool, [None], name="labels") # Or you can use tf.int32
+            self.labels = tf.placeholder(tf.int64, [None], name="labels") # Or you can use tf.int32
 
             # TODO: Define a suitable network with appropriate loss function
+            hidden_layer = tf.layers.flatten(tf.one_hot(self.windows, args.alphabet_size))
+            for i in range(args.hidden_layers):
+                hidden_layer = tf.layers.dense(
+                    hidden_layer,
+                    args.hidden_layer_sizes[i],
+                    activation=activations_map[args.hidden_layer_activations[i]],
+                    name="hidden_layer_" + str(i)
+                )
+            output_layer = tf.layers.dense(hidden_layer, 2, activation=None, name="output_layer")
+            self.predictions = tf.argmax(output_layer, axis=1)
 
             # TODO: Define training
+            loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer, scope="loss")
+            global_step = tf.train.create_global_step()
+            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
-            summary_writer = tf.contrib.summary.create_file_writer(args.logdir, flush_millis=10 * 1000)
+            summary_writer = tf.contrib.summary.create_file_writer(args.logdir, flush_millis=60 * 1000)
             self.summaries = {}
-            with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(100):
+            with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(500):
                 self.summaries["train"] = [tf.contrib.summary.scalar("train/loss", loss),
                                            tf.contrib.summary.scalar("train/accuracy", self.accuracy)]
             with summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
@@ -137,12 +154,19 @@ if __name__ == "__main__":
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--alphabet_size", default=None, type=int, help="Alphabet size.")
-    parser.add_argument("--batch_size", default=None, type=int, help="Batch size.")
-    parser.add_argument("--epochs", default=None, type=int, help="Number of epochs.")
+    parser.add_argument("--alphabet_size", default=100, type=int, help="Alphabet size.")
+    parser.add_argument("--batch_size", default=50, type=int, help="Batch size.")
+    parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
-    parser.add_argument("--window", default=None, type=int, help="Size of the window to use.")
+    parser.add_argument("--window", default=10, type=int, help="Size of the window to use.")
+    parser.add_argument("--hidden_layers", default=1, type=int, help="Nb of hidden layers.")
+    parser.add_argument("--hidden_layer_sizes", default=[50], type=int, nargs="+")
+    parser.add_argument("--hidden_layer_activations", default=["relu"], type=str, nargs="+")
     args = parser.parse_args()
+
+    if len(args.hidden_layer_sizes) != args.hidden_layers or \
+            len(args.hidden_layer_sizes) != len(args.hidden_layer_activations):
+        print("!!!args mismatch")
 
     # Create logdir name
     args.logdir = "logs/{}-{}-{}".format(
@@ -154,10 +178,11 @@ if __name__ == "__main__":
 
     # Load the data
     train = Dataset("uppercase_data_train.txt", args.window, alphabet=args.alphabet_size)
-    print(train.text)
-    print(train.labels )
-    print(train.alphabet)
-    exit(123)
+    # print(train.text[:20])
+    # print(train._lcletters[:20])
+    # print(train.labels[:20])
+    # print(train.alphabet)
+    # exit(123)
     dev = Dataset("uppercase_data_dev.txt", args.window, alphabet=train.alphabet)
     test = Dataset("uppercase_data_test.txt", args.window, alphabet=train.alphabet)
 
@@ -167,6 +192,7 @@ if __name__ == "__main__":
 
     # Train
     for i in range(args.epochs):
+        print("epoch " + str(i))
         while not train.epoch_finished():
             windows, labels = train.next_batch(args.batch_size)
             network.train(windows, labels)
