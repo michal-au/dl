@@ -15,6 +15,16 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args):
+        def construct_layer(config_line, input_layer):
+            layer_type_map = {
+                "C": tf.layers.,
+                "M",
+                "F",
+                "R",
+            }
+            layer_type, *params = config_line.split("-")
+
+
         with self.session.graph.as_default():
             # Inputs
             self.images = tf.placeholder(tf.float32, [None, self.WIDTH, self.HEIGHT, 1], name="images")
@@ -29,7 +39,9 @@ class Network:
             # - F: Flatten inputs
             # - R-hidden_layer_size: Add a dense layer with ReLU activation and specified size. Ex: R-100
             # Store result in `features`.
-
+            features = self.images
+            for l in args.cnn.split(','):
+                features = construct_layer(l, features)
             output_layer = tf.layers.dense(features, self.LABELS, activation=None, name="output_layer")
             self.predictions = tf.argmax(output_layer, axis=1)
 

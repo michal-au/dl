@@ -178,11 +178,6 @@ if __name__ == "__main__":
 
     # Load the data
     train = Dataset("uppercase_data_train.txt", args.window, alphabet=args.alphabet_size)
-    # print(train.text[:20])
-    # print(train._lcletters[:20])
-    # print(train.labels[:20])
-    # print(train.alphabet)
-    # exit(123)
     dev = Dataset("uppercase_data_dev.txt", args.window, alphabet=train.alphabet)
     test = Dataset("uppercase_data_test.txt", args.window, alphabet=train.alphabet)
 
