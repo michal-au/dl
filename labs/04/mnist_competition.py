@@ -16,10 +16,18 @@ class Network:
 
     def construct(self, args):
 
-        def construct_layer(layer_string, previous_layer):
-            type, *params = layer_string.split("-")
-            if type == "C":
-                return tf.layers.conv2d(previous_layer, int(params[0]), int(params[1]), params[2], activation=tf.nn.relu, name=layer_string)
+        def construct_layer(config_line, input_layer):
+            layer_type, *params = config_line.split("-")
+            if layer_type == "C":
+                return tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3],
+                                        activation=tf.nn.relu)
+            elif layer_type == "M":
+                return tf.layers.max_pooling2d(input_layer, int(params[0]), int(params[1]))
+            elif layer_type == "F":
+                return tf.layers.flatten(input_layer)
+            elif layer_type == "R":
+                return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
+
 
         with self.session.graph.as_default():
             # TODO: Construct the network and training operation.

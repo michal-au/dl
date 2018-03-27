@@ -3,5 +3,5 @@
 cd /net/work/people/auersperger/npfl114/labs/03/
 source ../../.venv/bin/activate
 
-python mnist_competition.py --epochs 10 --batch_size 100 --cnn
+python mnist_competition.py --epochs 10 --batch_size 100 --cnn C-10-3-2-same,M-3-2,F,R-100
 
