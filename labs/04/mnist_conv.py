@@ -16,14 +16,16 @@ class Network:
 
     def construct(self, args):
         def construct_layer(config_line, input_layer):
-            layer_type_map = {
-                "C": tf.layers.,
-                "M",
-                "F",
-                "R",
-            }
             layer_type, *params = config_line.split("-")
-
+            if layer_type == "C":
+                return tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3],
+                                        activation=tf.nn.relu)
+            elif layer_type == "M":
+                return tf.layers.max_pooling2d(input_layer, int(params[0]), int(params[1]))
+            elif layer_type == "F":
+                return tf.layers.flatten(input_layer)
+            elif layer_type == "R":
+                return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
 
         with self.session.graph.as_default():
             # Inputs
