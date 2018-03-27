@@ -101,6 +101,7 @@ class Network:
             # Inputs
             self.windows = tf.placeholder(tf.int32, [None, 2 * args.window + 1], name="windows")
             self.labels = tf.placeholder(tf.int64, [None], name="labels") # Or you can use tf.int32
+            self.is_training = tf.placeholder(tf.bool, [], name="training_flag")
 
             # TODO: Define a suitable network with appropriate loss function
             hidden_layer = tf.layers.flatten(tf.one_hot(self.windows, args.alphabet_size))
@@ -111,6 +112,8 @@ class Network:
                     activation=activations_map[args.hidden_layer_activations[i]],
                     name="hidden_layer_" + str(i)
                 )
+                if i == 0 and args.dropout:
+                    hidden_layer = tf.layers.dropout(hidden_layer, args.dropout, training=self.is_training)
             output_layer = tf.layers.dense(hidden_layer, 2, activation=None, name="output_layer")
             self.predictions = tf.argmax(output_layer, axis=1)
 
@@ -136,11 +139,19 @@ class Network:
             with summary_writer.as_default():
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
+            # Construct the saver
+            tf.add_to_collection("end_points/windows", self.windows)
+            tf.add_to_collection("end_points/labels", self.labels)
+            self.saver = tf.train.Saver()
+
+    def save(self, path):
+        self.saver.save(self.session, path)
+
     def train(self, windows, labels):
-        self.session.run([self.training, self.summaries["train"]], {self.windows: windows, self.labels: labels})
+        self.session.run([self.training, self.summaries["train"]], {self.windows: windows, self.labels: labels, self.is_training: True})
 
     def evaluate(self, dataset, windows, labels):
-        return self.session.run(self.summaries[dataset], {self.windows: windows, self.labels: labels})
+        return self.session.run(self.summaries[dataset], {self.windows: windows, self.labels: labels, self.is_training: False})
 
 
 if __name__ == "__main__":
@@ -162,6 +173,7 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_layers", default=1, type=int, help="Nb of hidden layers.")
     parser.add_argument("--hidden_layer_sizes", default=[50], type=int, nargs="+")
     parser.add_argument("--hidden_layer_activations", default=["relu"], type=str, nargs="+")
+    parser.add_argument("--dropout", default=None, type=float)
     args = parser.parse_args()
 
     if len(args.hidden_layer_sizes) != args.hidden_layers or \
@@ -195,4 +207,9 @@ if __name__ == "__main__":
         dev_windows, dev_labels = dev.all_data()
         network.evaluate("dev", dev_windows, dev_labels)
 
+    network.save("models/{}-{}-{}".format(
+        os.path.basename(__file__),
+        datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
+        ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value) for key, value in sorted(vars(args).items())))
+    ))
     # TODO: Generate the uppercased test set
