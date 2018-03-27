@@ -70,7 +70,8 @@ if __name__ == "__main__":
 
     # Load the data
     from tensorflow.examples.tutorials import mnist
-    mnist = mnist.input_data.read_data_sets("mnist-gan", reshape=False, seed=42)
+    mnist = mnist.input_data.read_data_sets("mnist-gan", reshape=False, seed=42,
+                                            source_url="https://ufal.mff.cuni.cz/~straka/courses/npfl114/1718/mnist-gan/")
 
     # Construct the network
     network = Network(threads=args.threads)
@@ -86,5 +87,6 @@ if __name__ == "__main__":
 
     # TODO: Compute test_labels, as numbers 0-9, corresponding to mnist.test.images
 
-    for label in test_labels:
-        print(label)
+    with open("mnist_competition_test.txt", "w") as test_file:
+        for label in test_labels:
+            print(label, file=test_file)
