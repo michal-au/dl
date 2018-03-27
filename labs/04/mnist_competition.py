@@ -15,8 +15,26 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args):
+
+        def construct_layer(layer_string, previous_layer):
+            type, *params = layer_string.split("-")
+            if type == "C":
+                return tf.layers.conv2d(previous_layer, int(params[0]), int(params[1]), params[2], activation=tf.nn.relu, name=layer_string)
+
         with self.session.graph.as_default():
             # TODO: Construct the network and training operation.
+            self.images = tf.placeholder(tf.float32, [None, self.HEIGHT, self.WIDTH, 1], name="images")
+            self.labels = tf.placeholder(tf.int64, [None], name="labels")
+
+            hidden_layer = self.images
+            for layer_string in args.cnn.split(","):
+                hidden_layer = construct_layer(layer_string, hidden_layer)
+            output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
+            self.predictions = tf.argmax(output_layer, axis=1)
+
+            loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer, scope="loss")
+            global_step = tf.train.create_global_step()
+            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
@@ -36,13 +54,14 @@ class Network:
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
     def train(self, images, labels):
-        # TODO
-        pass
+        self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels})
 
     def evaluate(self, dataset, images, labels):
-        # TODO
-        pass
+        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.images: images, self.labels: labels})
+        return accuracy
 
+    def predict(self, images):
+        return self.session.run([self.predictions], {self.images: images})[0]
 
 if __name__ == "__main__":
     import argparse
@@ -58,14 +77,16 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=None, type=int, help="Batch size.")
     parser.add_argument("--epochs", default=None, type=int, help="Number of epochs.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+    parser.add_argument("--cnn", default=None, type=str, help="Description of the CNN architecture.")
     args = parser.parse_args()
 
     # Create logdir name
-    args.logdir = "logs/{}-{}-{}".format(
+    experiment_name = "{}-{}-{}".format(
         os.path.basename(__file__),
         datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
         ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value) for key, value in sorted(vars(args).items())))
     )
+    args.logdir = "logs/" + experiment_name
     if not os.path.exists("logs"): os.mkdir("logs") # TF 1.6 will do this by itself
 
     # Load the data
@@ -86,7 +107,7 @@ if __name__ == "__main__":
         network.evaluate("dev", mnist.validation.images, mnist.validation.labels)
 
     # TODO: Compute test_labels, as numbers 0-9, corresponding to mnist.test.images
-
-    with open("mnist_competition_test.txt", "w") as test_file:
+    test_labels = network.predict(mnist.test.images)
+    with open("mnist_competition_test_{}.txt".format(experiment_name), "w") as test_file:
         for label in test_labels:
             print(label, file=test_file)
