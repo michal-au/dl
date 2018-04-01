@@ -21,6 +21,10 @@ class Network:
             if layer_type == "C":
                 return tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3],
                                         activation=tf.nn.relu)
+            if layer_type == "CB":
+                cnn = tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3], activation=None, use_bias=False)
+                bn = tf.layers.batch_normalization(cnn, training=self.is_training)
+                return tf.nn.relu(bn)
             elif layer_type == "M":
                 return tf.layers.max_pooling2d(input_layer, int(params[0]), int(params[1]))
             elif layer_type == "F":
@@ -44,7 +48,8 @@ class Network:
 
             loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer, scope="loss")
             global_step = tf.train.create_global_step()
-            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))

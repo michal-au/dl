@@ -15,6 +15,22 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args):
+        def construct_layer(config_line, input_layer):
+            layer_type, *params = config_line.split("-")
+            if layer_type == "C":
+                return tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3],
+                                        activation=tf.nn.relu)
+            if layer_type == "CB":
+                cnn = tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3], activation=None, use_bias=False)
+                bn = tf.layers.batch_normalization(cnn, training=self.is_training)
+                return tf.nn.relu(bn)
+            elif layer_type == "M":
+                return tf.layers.max_pooling2d(input_layer, int(params[0]), int(params[1]))
+            elif layer_type == "F":
+                return tf.layers.flatten(input_layer)
+            elif layer_type == "R":
+                return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
+
         with self.session.graph.as_default():
             # Inputs
             self.images = tf.placeholder(tf.float32, [None, self.HEIGHT, self.WIDTH, 1], name="images")
@@ -37,14 +53,17 @@ class Network:
             #   `tf.get_collection(tf.GraphKeys.UPDATE_OPS)` and utilized either directly in `session.run`,
             #   or (preferably) attached to `self.train` using `tf.control_dependencies`.
             # Store result in `features`.
-
+            features = self.images
+            for l in args.cnn.split(','):
+                features = construct_layer(l, features)
             output_layer = tf.layers.dense(features, self.LABELS, activation=None, name="output_layer")
             self.predictions = tf.argmax(output_layer, axis=1)
 
             # Training
             loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer, scope="loss")
             global_step = tf.train.create_global_step()
-            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
@@ -64,10 +83,10 @@ class Network:
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
     def train(self, images, labels):
-        self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels})
+        self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels, self.is_training: True})
 
     def evaluate(self, dataset, images, labels):
-        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.images: images, self.labels: labels})
+        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.images: images, self.labels: labels, self.is_training: False})
         return accuracy
 
 
