@@ -27,12 +27,14 @@ class Network:
                 return tf.layers.flatten(input_layer)
             elif layer_type == "R":
                 return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
-
+            elif layer_type == "D":
+                return tf.layers.dropout(hidden_layer, float(params[0]), training=self.is_training)
 
         with self.session.graph.as_default():
             # TODO: Construct the network and training operation.
             self.images = tf.placeholder(tf.float32, [None, self.HEIGHT, self.WIDTH, 1], name="images")
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
+            self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
             hidden_layer = self.images
             for layer_string in args.cnn.split(","):
@@ -62,14 +64,14 @@ class Network:
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
     def train(self, images, labels):
-        self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels})
+        self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels, self.is_training: True})
 
     def evaluate(self, dataset, images, labels):
-        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.images: images, self.labels: labels})
+        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.images: images, self.labels: labels, self.is_training: False})
         return accuracy
 
     def predict(self, images):
-        return self.session.run([self.predictions], {self.images: images})[0]
+        return self.session.run([self.predictions], {self.images: images, self.is_training: False})[0]
 
 if __name__ == "__main__":
     import argparse
