@@ -89,7 +89,7 @@ class Network:
             for layer_string in args.mask_decoder.split(","):
                 mask_prediction_layer = construct_layer(layer_string, mask_prediction_layer)
 
-            available_labels = tf.cond(self.is_training, self.labels, self.labels_predictions)
+            available_labels = tf.cond(self.is_training, lambda: self.labels, lambda: self.labels_predictions)
             transp = tf.transpose(mask_prediction_layer, [0, 3, 1, 2])
             rang = tf.range(tf.shape(self.images)[0])
             idcs = tf.concat([tf.expand_dims(rang, 1), tf.expand_dims(tf.to_int32(available_labels), 1)], 1)
