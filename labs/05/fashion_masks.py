@@ -47,6 +47,24 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args):
+        def construct_layer(config_line, input_layer):
+            layer_type, *params = config_line.split("-")
+            if layer_type == "C":
+                return tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3],
+                                        activation=tf.nn.relu)
+            if layer_type == "CB":
+                cnn = tf.layers.conv2d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3], activation=None, use_bias=False)
+                bn = tf.layers.batch_normalization(cnn, training=self.is_training)
+                return tf.nn.relu(bn)
+            elif layer_type == "M":
+                return tf.layers.max_pooling2d(input_layer, int(params[0]), int(params[1]))
+            elif layer_type == "F":
+                return tf.layers.flatten(input_layer)
+            elif layer_type == "R":
+                return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
+            elif layer_type == "D":
+                return tf.layers.dropout(input_layer, float(params[0]), training=self.is_training)
+
         with self.session.graph.as_default():
             # Inputs
             self.images = tf.placeholder(tf.float32, [None, self.HEIGHT, self.WIDTH, 1], name="images")
@@ -55,7 +73,19 @@ class Network:
             self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
             # TODO: Computation and training.
-            #
+            hidden_layer = self.images
+            for layer_string in args.cnn.split(","):
+                hidden_layer = construct_layer(layer_string, hidden_layer)
+            classification_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
+            self.labels_predictions = tf.argmax(classification_layer, axis=1)
+            self.masks_predictions = self.masks
+
+            loss = tf.losses.sparse_softmax_cross_entropy(self.labels, classification_layer, scope="loss")
+
+            global_step = tf.train.create_global_step()
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
+
             # The code below assumes that:
             # - loss is stored in `loss`
             # - training is stored in `self.training`
@@ -120,16 +150,18 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=None, type=int, help="Batch size.")
     parser.add_argument("--epochs", default=None, type=int, help="Number of epochs.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+    parser.add_argument("--cnn", default=None, type=str, help="Description of the CNN architecture.")
     args = parser.parse_args()
 
     # Create logdir name
-    args.logdir = "logs/{}-{}-{}".format(
+    experiment_name = "{}-{}-{}".format(
         os.path.basename(__file__),
         datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
         ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value)
                   for key, value in sorted(vars(args).items()))).replace("/", "-")
     )
-    if not os.path.exists("logs"): os.mkdir("logs") # TF 1.6 will do this by itself
+    args.logdir = "logs/" + experiment_name
+    if not os.path.exists("logs"): os.mkdir("logs")  # TF 1.6 will do this by itself
 
     # Load the data
     train = Dataset("fashion-masks-train.npz")
@@ -148,7 +180,7 @@ if __name__ == "__main__":
 
         network.evaluate("dev", dev.images, dev.labels, dev.masks)
 
-    labels, masks = network.predict(test.images)
-    with open("fashion_masks_test.txt", "w") as test_file:
-        for i in range(len(labels)):
-            print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
+    # labels, masks = network.predict(test.images)
+    # with open("results-{}.txt".format(experiment_name), "w") as test_file:
+    #     for i in range(len(labels)):
+    #         print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
