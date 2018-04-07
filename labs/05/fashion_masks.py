@@ -34,6 +34,7 @@ class Dataset:
             return True
         return False
 
+
 class Network:
     WIDTH = 28
     HEIGHT = 28
@@ -74,14 +75,31 @@ class Network:
 
             # TODO: Computation and training.
             hidden_layer = self.images
-            for layer_string in args.cnn.split(","):
+            for layer_string in args.encoder.split(","):
                 hidden_layer = construct_layer(layer_string, hidden_layer)
-            classification_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
+
+            classification_layer = hidden_layer
+            for layer_string in args.classification_decoder.split(","):
+                classification_layer = construct_layer(layer_string, classification_layer)
+
+            classification_layer = tf.layers.dense(classification_layer, self.LABELS, activation=None, name="output_layer")
             self.labels_predictions = tf.argmax(classification_layer, axis=1)
-            self.masks_predictions = self.masks
 
-            loss = tf.losses.sparse_softmax_cross_entropy(self.labels, classification_layer, scope="loss")
+            mask_prediction_layer = hidden_layer
+            for layer_string in args.mask_decoder.split(","):
+                mask_prediction_layer = construct_layer(layer_string, mask_prediction_layer)
 
+            available_labels = tf.cond(self.is_training, self.labels, self.labels_predictions)
+            transp = tf.transpose(mask_prediction_layer, [0, 3, 1, 2])
+            rang = tf.range(tf.shape(self.images)[0])
+            idcs = tf.concat([tf.expand_dims(rang, 1), tf.expand_dims(tf.to_int32(available_labels), 1)], 1)
+
+            self.masks_predictions = tf.expand_dims(tf.gather_nd(transp, idcs), axis=3)
+
+            loss_a = tf.losses.sparse_softmax_cross_entropy(self.labels, classification_layer, scope="loss_a")
+            loss_b = tf.losses.sigmoid_cross_entropy(self.masks, self.masks_predictions, scope="loss_b")
+
+            loss = loss_a + loss_b
             global_step = tf.train.create_global_step()
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
@@ -150,7 +168,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=None, type=int, help="Batch size.")
     parser.add_argument("--epochs", default=None, type=int, help="Number of epochs.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
-    parser.add_argument("--cnn", default=None, type=str, help="Description of the CNN architecture.")
+    parser.add_argument("--encoder", default=None, type=str)
+    parser.add_argument("--classification-decoder", default=None, type=str)
+    parser.add_argument("--mask-decoder", default=None, type=str)
     args = parser.parse_args()
 
     # Create logdir name
