@@ -94,7 +94,7 @@ class Network:
             rang = tf.range(tf.shape(self.images)[0])
             idcs = tf.concat([tf.expand_dims(rang, 1), tf.expand_dims(tf.to_int32(available_labels), 1)], 1)
 
-            self.masks_predictions = tf.expand_dims(tf.gather_nd(transp, idcs), axis=3)
+            self.masks_predictions = tf.round(tf.expand_dims(tf.gather_nd(transp, idcs), axis=3))
 
             loss_a = tf.losses.sparse_softmax_cross_entropy(self.labels, classification_layer, scope="loss_a")
             loss_b = tf.losses.sigmoid_cross_entropy(self.masks, self.masks_predictions, scope="loss_b")
@@ -116,7 +116,7 @@ class Network:
             only_correct_masks = tf.where(tf.equal(self.labels, self.labels_predictions),
                                           self.masks_predictions, tf.zeros_like(self.masks_predictions))
             intersection = tf.reduce_sum(only_correct_masks * self.masks, axis=[1,2,3])
-            iou = tf.reduce_mean(
+            self.iou = tf.reduce_mean(
                 intersection / (tf.reduce_sum(only_correct_masks, axis=[1,2,3]) + tf.reduce_sum(self.masks, axis=[1,2,3]) - intersection)
             )
 
@@ -125,14 +125,14 @@ class Network:
             with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(100):
                 self.summaries["train"] = [tf.contrib.summary.scalar("train/loss", loss),
                                            tf.contrib.summary.scalar("train/accuracy", accuracy),
-                                           tf.contrib.summary.scalar("train/iou", iou),
+                                           tf.contrib.summary.scalar("train/iou", self.iou),
                                            tf.contrib.summary.image("train/images", self.images),
                                            tf.contrib.summary.image("train/masks", self.masks_predictions)]
             with summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 for dataset in ["dev", "test"]:
                     self.summaries[dataset] = [tf.contrib.summary.scalar(dataset+"/loss", loss),
                                                tf.contrib.summary.scalar(dataset+"/accuracy", accuracy),
-                                               tf.contrib.summary.scalar(dataset+"/iou", iou),
+                                               tf.contrib.summary.scalar(dataset+"/iou", self.iou),
                                                tf.contrib.summary.image(dataset+"/images", self.images),
                                                tf.contrib.summary.image(dataset+"/masks", self.masks_predictions)]
 
@@ -146,12 +146,13 @@ class Network:
                          {self.images: images, self.labels: labels, self.masks: masks, self.is_training: True})
 
     def evaluate(self, dataset, images, labels, masks):
-        self.session.run(self.summaries[dataset],
+        iou, _ = self.session.run([self.iou, self.summaries[dataset]],
                          {self.images: images, self.labels: labels, self.masks: masks, self.is_training: False})
+        return iou
 
     def predict(self, images):
         return self.session.run([self.labels_predictions, self.masks_predictions],
-                                {self.images: images, self.is_training: False})
+                                {self.images: images, self.is_training: False, self.labels: np.zeros(images.shape[0], np.int64)})
 
 
 if __name__ == "__main__":
@@ -193,12 +194,18 @@ if __name__ == "__main__":
     network.construct(args)
 
     # Train
+    max_iou = 0
     for i in range(args.epochs):
         while not train.epoch_finished():
             images, labels, masks = train.next_batch(args.batch_size)
             network.train(images, labels, masks)
 
-        network.evaluate("dev", dev.images, dev.labels, dev.masks)
+        iou = network.evaluate("dev", dev.images, dev.labels, dev.masks)
+        if iou > max_iou:
+            labels, masks = network.predict(test.images)
+            with open("results-{}.txt".format(experiment_name), "w") as test_file:
+                for i in range(len(labels)):
+                    print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
 
     # labels, masks = network.predict(test.images)
     # with open("results-{}.txt".format(experiment_name), "w") as test_file:
