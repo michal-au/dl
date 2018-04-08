@@ -94,18 +94,21 @@ class Network:
             rang = tf.range(tf.shape(self.images)[0])
             idcs = tf.concat([tf.expand_dims(rang, 1), tf.expand_dims(tf.to_int32(available_labels), 1)], 1)
 
-            self.masks_predictions_unrounded = tf.expand_dims(tf.gather_nd(transp, idcs), axis=3, name="mask_pred_uround")
+            self.masks_predictions_unrounded = tf.sigmoid(tf.expand_dims(tf.gather_nd(transp, idcs), axis=3, name="mask_pred_uround"))
             self.masks_predictions = tf.round(self.masks_predictions_unrounded, name="mask_pred_round")
 
             loss_a = tf.losses.sparse_softmax_cross_entropy(self.labels, classification_layer, scope="loss_a")
 
-            intersection = tf.reduce_sum(self.masks_predictions * self.masks, axis=[1,2,3])
-            loss_b = tf.reduce_mean(
-                intersection / (tf.reduce_sum(self.masks_predictions, axis=[1,2,3]) + tf.reduce_sum(self.masks, axis=[1,2,3]) - intersection)
-            )
+            a, b = tf.layers.flatten(self.masks), tf.layers.flatten(self.masks_predictions_unrounded)
+            self.loss_b = tf.losses.sigmoid_cross_entropy(a, b)  # (1 - a) * tf.log(1 - b)
+            # self.loss_b = tf.reduce_mean(a * tf.log(b) + (1 - a) * tf.log(1 - b))
+            # intersection = tf.reduce_sum(self.masks_predictions * self.masks, axis=[1,2,3])
+            # self.loss_b = tf.reduce_mean(
+            #     intersection / (tf.reduce_sum(self.masks_predictions, axis=[1,2,3]) + tf.reduce_sum(self.masks, axis=[1,2,3]) - intersection)
+            # )
             #loss_b = tf.losses.mean_squared_error(self.masks, self.masks_predictions_unrounded, scope="loss_b")
 
-            loss = loss_a + loss_b
+            loss = loss_a + self.loss_b
             global_step = tf.train.create_global_step()
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
@@ -119,8 +122,9 @@ class Network:
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.labels_predictions), tf.float32))
-            only_correct_masks = tf.where(tf.equal(self.labels, self.labels_predictions),
-                                          self.masks_predictions, tf.zeros_like(self.masks_predictions))
+            # only_correct_masks = tf.where(tf.equal(self.labels, self.labels_predictions),
+            #                               self.masks_predictions, tf.zeros_like(self.masks_predictions))
+            only_correct_masks = self.masks_predictions
             intersection = tf.reduce_sum(only_correct_masks * self.masks, axis=[1,2,3])
             self.iou = tf.reduce_mean(
                 intersection / (tf.reduce_sum(only_correct_masks, axis=[1,2,3]) + tf.reduce_sum(self.masks, axis=[1,2,3]) - intersection)
@@ -130,7 +134,7 @@ class Network:
             self.summaries = {}
             with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(100):
                 self.summaries["train"] = [tf.contrib.summary.scalar("train/loss", loss),
-                                           tf.contrib.summary.scalar("train/lossB", loss_b),
+                                           tf.contrib.summary.scalar("train/lossB", self.loss_b),
                                            tf.contrib.summary.scalar("train/accuracy", accuracy),
                                            tf.contrib.summary.scalar("train/iou", self.iou),
                                            tf.contrib.summary.image("train/images", self.images),
@@ -149,8 +153,9 @@ class Network:
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
     def train(self, images, labels, masks):
-        self.session.run([self.training, self.summaries["train"]],
+        self.session.run([self.training, self.summaries["train"], self.loss_b],
                          {self.images: images, self.labels: labels, self.masks: masks, self.is_training: True})
+
 
     def evaluate(self, dataset, images, labels, masks):
         iou, _ = self.session.run([self.iou, self.summaries[dataset]],
