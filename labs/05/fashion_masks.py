@@ -122,9 +122,9 @@ class Network:
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.labels_predictions), tf.float32))
-            # only_correct_masks = tf.where(tf.equal(self.labels, self.labels_predictions),
-            #                               self.masks_predictions, tf.zeros_like(self.masks_predictions))
-            only_correct_masks = self.masks_predictions
+            only_correct_masks = tf.where(tf.equal(self.labels, self.labels_predictions),
+                                          self.masks_predictions, tf.zeros_like(self.masks_predictions))
+            # only_correct_masks = self.masks_predictions
             intersection = tf.reduce_sum(only_correct_masks * self.masks, axis=[1,2,3])
             self.iou = tf.reduce_mean(
                 intersection / (tf.reduce_sum(only_correct_masks, axis=[1,2,3]) + tf.reduce_sum(self.masks, axis=[1,2,3]) - intersection)
