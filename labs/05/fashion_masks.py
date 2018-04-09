@@ -212,12 +212,12 @@ if __name__ == "__main__":
             images, labels, masks = train.next_batch(args.batch_size)
             network.train(images, labels, masks)
 
-#        iou = network.evaluate("dev", dev.images, dev.labels, dev.masks)
-#        if iou > max_iou:
-#            labels, masks = network.predict(test.images)
-#            with open("results-{}.txt".format(experiment_name), "w") as test_file:
-#                for i in range(len(labels)):
-#                    print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
+        iou = network.evaluate("dev", dev.images, dev.labels, dev.masks)
+        if iou > max_iou and iou > 0.912:
+            labels, masks = network.predict(test.images)
+            with open("results-{}.txt".format(experiment_name), "w") as test_file:
+                for i in range(len(labels)):
+                    print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
 
     # labels, masks = network.predict(test.images)
     # with open("results-{}.txt".format(experiment_name), "w") as test_file:
