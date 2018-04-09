@@ -101,24 +101,11 @@ class Network:
 
             a, b = tf.layers.flatten(self.masks), tf.layers.flatten(self.masks_predictions_unrounded)
             self.loss_b = tf.losses.sigmoid_cross_entropy(a, b)  # (1 - a) * tf.log(1 - b)
-            # self.loss_b = tf.reduce_mean(a * tf.log(b) + (1 - a) * tf.log(1 - b))
-            # intersection = tf.reduce_sum(self.masks_predictions * self.masks, axis=[1,2,3])
-            # self.loss_b = tf.reduce_mean(
-            #     intersection / (tf.reduce_sum(self.masks_predictions, axis=[1,2,3]) + tf.reduce_sum(self.masks, axis=[1,2,3]) - intersection)
-            # )
-            #loss_b = tf.losses.mean_squared_error(self.masks, self.masks_predictions_unrounded, scope="loss_b")
 
             loss = loss_a + self.loss_b
             global_step = tf.train.create_global_step()
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
-
-            # The code below assumes that:
-            # - loss is stored in `loss`
-            # - training is stored in `self.training`
-            # - label predictions are stored in `self.labels_predictions` of shape [None] and type tf.int64
-            # - mask predictions are stored in `self.masks_predictions` of shape [None, 28, 28, 1] and type tf.float32
-            #   with values 0 or 1
 
             # Summaries
             accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.labels_predictions), tf.float32))
@@ -214,12 +201,11 @@ if __name__ == "__main__":
 
         iou = network.evaluate("dev", dev.images, dev.labels, dev.masks)
         if iou > max_iou and iou > 0.912:
-            labels, masks = network.predict(test.images)
-            with open("results-{}.txt".format(experiment_name), "w") as test_file:
-                for i in range(len(labels)):
-                    print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
+            step = 1000
+            for j in range(10):
+                labels, masks = network.predict(test.images[j*step:(j+1)*step])
+                with open("results-{}-{}.txt".format(experiment_name, j), "w") as test_file:
+                    for i in range(len(labels)):
+                        print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
 
-    # labels, masks = network.predict(test.images)
-    # with open("results-{}.txt".format(experiment_name), "w") as test_file:
-    #     for i in range(len(labels)):
-    #         print(labels[i], *masks[i].astype(np.uint8).flatten(), file=test_file)
+
