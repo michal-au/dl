@@ -2,6 +2,10 @@
 import numpy as np
 import tensorflow as tf
 
+
+# python fashion_masks.py --epochs 60 --batch_size 100 --encoder C-64-3-1-same --classification-decoder C-64-3-1-same,M-2-2,D-0.1,C-64-3-1-same,M-2-2,D-0.3,F,R-256,D-0.5,R-64 --mask-decoder C-64-3-1-same,C-32-5-1-same,D-0.1,C-16-7-1-same,D-0.15,C-10-9-1-same,C-10-1-1-same
+
+
 class Dataset:
     def __init__(self, filename):
         data = np.load(filename)
