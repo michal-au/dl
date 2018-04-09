@@ -2,6 +2,9 @@
 import numpy as np
 import tensorflow as tf
 
+#i bs=100, c=CB-20-3-2-same,M-3-2,F,D-0.5,R-100, e=100, t=1
+
+
 class Network:
     WIDTH = 28
     HEIGHT = 28
