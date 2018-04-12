@@ -5,7 +5,7 @@ import tensorflow as tf
 class Dataset:
     def __init__(self, filename, shuffle_batches = True):
         data = np.load(filename)
-        self._voxels = data["voxels"]
+        self._voxels = data["voxels"].astype(np.float32)
         self._labels = data["labels"] if "labels" in data else None
 
         self._shuffle_batches = shuffle_batches
@@ -64,6 +64,25 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args):
+
+        def construct_layer(config_line, input_layer):
+            layer_type, *params = config_line.split("-")
+            if layer_type == "C":
+                return tf.layers.conv3d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3],
+                                        activation=tf.nn.relu)
+            if layer_type == "CB":
+                cnn = tf.layers.conv3d(input_layer, int(params[0]), int(params[1]), int(params[2]), params[3], activation=None, use_bias=False)
+                bn = tf.layers.batch_normalization(cnn, training=self.is_training)
+                return tf.nn.relu(bn)
+            elif layer_type == "M":
+                return tf.layers.max_pooling3d(input_layer, int(params[0]), int(params[1]))
+            elif layer_type == "F":
+                return tf.layers.flatten(input_layer)
+            elif layer_type == "R":
+                return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
+            elif layer_type == "D":
+                return tf.layers.dropout(input_layer, float(params[0]), training=self.is_training)
+
         with self.session.graph.as_default():
             # Inputs
             self.voxels = tf.placeholder(
@@ -71,12 +90,19 @@ class Network:
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
             self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
-            # TODO: Computation and training.
-            #
-            # The code below assumes that:
-            # - loss is stored in `loss`
-            # - training is stored in `self.training`
-            # - label predictions are stored in `self.predictions`
+            # NN architecture
+            hidden_layer = self.voxels
+            for layer_config_line in args.architecture.split(","):
+                hidden_layer = construct_layer(layer_config_line, hidden_layer)
+
+            output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
+            self.predictions = tf.argmax(output_layer, axis=1)
+            loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer)
+
+            # Training
+            global_step = tf.train.create_global_step()
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.labels, self.predictions), tf.float32))
@@ -122,6 +148,7 @@ if __name__ == "__main__":
     parser.add_argument("--modelnet_dim", default=20, type=int, help="Dimension of ModelNet data.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
     parser.add_argument("--train_split", default=None, type=float, help="Ratio of examples to use as train.")
+    parser.add_argument("--architecture", default=None, type=str, help="nn architecture")
     args = parser.parse_args()
 
     # Create logdir name
