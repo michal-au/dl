@@ -8,26 +8,30 @@ e,M-3-3,CB-16-3-1-same,M-2-2,F,D-0.6,R-50 --modelnet_dim 32
 import numpy as np
 import tensorflow as tf
 
+
 class Dataset:
-    def __init__(self, filename, shuffle_batches = True):
-        data = np.load(filename)
-        self._voxels = data["voxels"].astype(np.float32)
-        self._labels = data["labels"] if "labels" in data else None
+    def __init__(self, train = True, shuffle_batches = True):
+        data20 = np.load('modelnet20-{}.npz'.format("train" if train else "test"))
+        data32 = np.load('modelnet32-{}.npz'.format("train" if train else "test"))
+        self._voxels20 = data20["voxels"].astype(np.float32)
+        self._voxels32 = data32["voxels"].astype(np.float32)
+        self._labels = data20["labels"] if "labels" in data20 else None
 
         self._shuffle_batches = shuffle_batches
         self._new_permutation()
 
     def _new_permutation(self):
         if self._shuffle_batches:
-            self._permutation = np.random.permutation(len(self._voxels))
+            self._permutation = np.random.permutation(len(self._voxels20))
         else:
-            self._permutation = np.arange(len(self._voxels))
+            self._permutation = np.arange(len(self._voxels20))
 
     def split(self, ratio):
-        split = int(len(self._voxels) * ratio)
+        split = int(len(self._voxels20) * ratio)
 
         first, second = Dataset.__new__(Dataset), Dataset.__new__(Dataset)
-        first._voxels, second._voxels = self._voxels[:split], self._voxels[split:]
+        first._voxels20, second._voxels20 = self._voxels20[:split], self._voxels20[split:]
+        first._voxels32, second._voxels32 = self._voxels32[:split], self._voxels32[split:]
         if self._labels is not None:
             first._labels, second._labels = self._labels[:split], self._labels[split:]
         else:
@@ -41,7 +45,7 @@ class Dataset:
 
     @property
     def voxels(self):
-        return self._voxels
+        return self._voxels20, self._voxels32
 
     @property
     def labels(self):
@@ -50,7 +54,7 @@ class Dataset:
     def next_batch(self, batch_size):
         batch_size = min(batch_size, len(self._permutation))
         batch_perm, self._permutation = self._permutation[:batch_size], self._permutation[batch_size:]
-        return self._voxels[batch_perm], self._labels[batch_perm] if self._labels is not None else None
+        return self._voxels20[batch_perm], self._voxels32[batch_perm], self._labels[batch_perm] if self._labels is not None else None
 
     def epoch_finished(self):
         if len(self._permutation) == 0:
@@ -91,17 +95,31 @@ class Network:
 
         with self.session.graph.as_default():
             # Inputs
-            self.voxels = tf.placeholder(
-                tf.float32, [None, args.modelnet_dim, args.modelnet_dim, args.modelnet_dim, 1], name="voxels")
+            self.voxels20 = tf.placeholder(
+                tf.float32, [None, 20, 20, 20, 1], name="voxels20")
+            self.voxels32 = tf.placeholder(
+                tf.float32, [None, 32, 32, 32, 1], name="voxels32")
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
             self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
             # NN architecture
-            hidden_layer = self.voxels
-            for layer_config_line in args.architecture.split(","):
-                hidden_layer = construct_layer(layer_config_line, hidden_layer)
+            hidden_layer20 = self.voxels20
+            for layer_config_line in args.arch20.split(","):
+                hidden_layer20 = construct_layer(layer_config_line, hidden_layer20)
 
-            output_layer = tf.layers.dense(hidden_layer, self.LABELS, activation=None, name="output_layer")
+            # output_layer20 = tf.layers.dense(hidden_layer20, self.LABELS, activation=None, name="output_layer")
+
+            hidden_layer32 = self.voxels32
+            for layer_config_line in args.arch32.split(","):
+                hidden_layer32 = construct_layer(layer_config_line, hidden_layer32)
+
+            concat_layer = tf.concat([hidden_layer20, hidden_layer32], axis=1, name="concat")
+            for layer_config_line in args.arch_common.split(","):
+                concat_layer = construct_layer(layer_config_line, concat_layer)
+
+            output_layer = tf.layers.dense(concat_layer, self.LABELS, activation=None, name="outputl")
+
+
             self.predictions = tf.argmax(output_layer, axis=1)
             loss = tf.losses.sparse_softmax_cross_entropy(self.labels, output_layer)
 
@@ -127,15 +145,15 @@ class Network:
             with summary_writer.as_default():
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
-    def train(self, voxels, labels):
-        self.session.run([self.training, self.summaries["train"]], {self.voxels: voxels, self.labels: labels, self.is_training: True})
+    def train(self, voxels20, voxels32, labels):
+        self.session.run([self.training, self.summaries["train"]], {self.voxels20: voxels20, self.voxels32: voxels32, self.labels: labels, self.is_training: True})
 
-    def evaluate(self, dataset, voxels, labels):
-        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.voxels: voxels, self.labels: labels, self.is_training: False})
+    def evaluate(self, dataset, voxels20, voxels32, labels):
+        accuracy, _ = self.session.run([self.accuracy, self.summaries[dataset]], {self.voxels20: voxels20, self.voxels32: voxels32, self.labels: labels, self.is_training: False})
         return accuracy
 
-    def predict(self, voxels):
-        return self.session.run(self.predictions, {self.voxels: voxels, self.is_training: False})
+    def predict(self, voxels20, voxels32):
+        return self.session.run(self.predictions, {self.voxels20: voxels20, self.voxels32: voxels32, self.is_training: False})
 
 
 if __name__ == "__main__":
@@ -154,7 +172,9 @@ if __name__ == "__main__":
     parser.add_argument("--modelnet_dim", default=20, type=int, help="Dimension of ModelNet data.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
     parser.add_argument("--train_split", default=None, type=float, help="Ratio of examples to use as train.")
-    parser.add_argument("--architecture", default=None, type=str, help="nn architecture")
+    parser.add_argument("--arch20", default=None, type=str, help="nn architecture")
+    parser.add_argument("--arch32", default=None, type=str, help="nn architecture")
+    parser.add_argument("--arch_common", default=None, type=str, help="nn architecture")
     args = parser.parse_args()
 
     # Create logdir name
@@ -166,8 +186,8 @@ if __name__ == "__main__":
     if not os.path.exists("logs"): os.mkdir("logs") # TF 1.6 will do this by itself
 
     # Load the data
-    train, dev = Dataset("modelnet{}-train.npz".format(args.modelnet_dim)).split(args.train_split)
-    test = Dataset("modelnet{}-test.npz".format(args.modelnet_dim), shuffle_batches=False)
+    train, dev = Dataset().split(args.train_split)
+    test = Dataset(train=False, shuffle_batches=False)
 
     # Construct the network
     network = Network(threads=args.threads)
@@ -177,17 +197,17 @@ if __name__ == "__main__":
     # Train
     for i in range(args.epochs):
         while not train.epoch_finished():
-            voxels, labels = train.next_batch(args.batch_size)
-            network.train(voxels, labels)
+            voxels20, voxels32, labels = train.next_batch(args.batch_size)
+            network.train(voxels20, voxels32, labels)
 
-        acc = network.evaluate("dev", dev.voxels, dev.labels)
+        acc = network.evaluate("dev", dev._voxels20, dev._voxels32, dev.labels)
         if acc > acc_max and acc > 0.96:
             print("new best acc: {}".format(acc))
             # Predict test data
-            with open("{}/3d_recognition_testi-{}.txt".format(args.logdir, acc), "w") as test_file:
+            with open("{}/3d_recognition_test-{}.txt".format(args.logdir, acc), "w") as test_file:
                 while not test.epoch_finished():
-                    voxels, _ = test.next_batch(args.batch_size)
-                    labels = network.predict(voxels)
+                    voxels20, voxels32, _ = test.next_batch(args.batch_size)
+                    labels = network.predict(voxels20, voxels32)
 
                     for label in labels:
                         print(label, file=test_file)
