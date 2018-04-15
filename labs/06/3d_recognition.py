@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+
+"""
+python 3d_recognition.py --epochs 120 --batch_size 128 --train_split 0.85 --architecture CB-16-3-1-sam
+e,M-3-3,CB-16-3-1-same,M-2-2,F,D-0.6,R-50 --modelnet_dim 32
+"""
+
 import numpy as np
 import tensorflow as tf
 
@@ -167,19 +173,22 @@ if __name__ == "__main__":
     network = Network(threads=args.threads)
     network.construct(args)
 
+    acc_max = 0
     # Train
     for i in range(args.epochs):
         while not train.epoch_finished():
             voxels, labels = train.next_batch(args.batch_size)
             network.train(voxels, labels)
 
-        network.evaluate("dev", dev.voxels, dev.labels)
+        acc = network.evaluate("dev", dev.voxels, dev.labels)
+        if acc > acc_max and acc > 0.96:
+            print("new best acc: {}".format(acc))
+            # Predict test data
+            with open("{}/3d_recognition_testi-{}.txt".format(args.logdir, acc), "w") as test_file:
+                while not test.epoch_finished():
+                    voxels, _ = test.next_batch(args.batch_size)
+                    labels = network.predict(voxels)
 
-    # Predict test data
-    with open("{}/3d_recognition_test.txt".format(args.logdir), "w") as test_file:
-        while not test.epoch_finished():
-            voxels, _ = test.next_batch(args.batch_size)
-            labels = network.predict(voxels)
-
-            for label in labels:
-                print(label, file=test_file)
+                    for label in labels:
+                        print(label, file=test_file)
+            acc_max = acc
