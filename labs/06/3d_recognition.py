@@ -102,6 +102,7 @@ class Network:
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
             self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
+<<<<<<< HEAD
             # NN architecture
             hidden_layer20 = self.voxels20
             for layer_config_line in args.arch20.split(","):
@@ -133,12 +134,14 @@ class Network:
             summary_writer = tf.contrib.summary.create_file_writer(args.logdir, flush_millis=10 * 1000)
             self.summaries = {}
             with summary_writer.as_default(), tf.contrib.summary.record_summaries_every_n_global_steps(8):
-                self.summaries["train"] = [tf.contrib.summary.scalar("train/loss", loss),
+                self.summaries["train"] = [tf.contrib.summary.scalar("train/loss", self.loss),
                                            tf.contrib.summary.scalar("train/accuracy", self.accuracy)]
             with summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
+                self.given_loss = tf.placeholder(tf.float32, [], name="given_loss")
+                self.given_accuracy = tf.placeholder(tf.float32, [], name="given_accuracy")
                 for dataset in ["dev", "test"]:
-                    self.summaries[dataset] = [tf.contrib.summary.scalar(dataset + "/loss", loss),
-                                               tf.contrib.summary.scalar(dataset + "/accuracy", self.accuracy)]
+                    self.summaries[dataset] = [tf.contrib.summary.scalar(dataset + "/loss", self.given_loss),
+                                               tf.contrib.summary.scalar(dataset + "/accuracy", self.given_accuracy)]
 
             # Initialize variables
             self.session.run(tf.global_variables_initializer())
@@ -155,6 +158,12 @@ class Network:
     def predict(self, voxels20, voxels32):
         return self.session.run(self.predictions, {self.voxels20: voxels20, self.voxels32: voxels32, self.is_training: False})
 
+    def predict(self, dataset, batch_size):
+        labels = []
+        while not dataset.epoch_finished():
+            voxels, _ = dataset.next_batch(batch_size)
+            labels.append(self.session.run(self.predictions, {self.voxels: voxels, self.is_training: False}))
+        return np.concatenate(labels)
 
 if __name__ == "__main__":
     import argparse
