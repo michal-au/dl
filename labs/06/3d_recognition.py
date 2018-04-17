@@ -102,7 +102,6 @@ class Network:
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
             self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
-<<<<<<< HEAD
             # NN architecture
             hidden_layer20 = self.voxels20
             for layer_config_line in args.arch20.split(","):
