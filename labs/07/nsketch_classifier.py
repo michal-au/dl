@@ -39,7 +39,7 @@ class Dataset:
 
 class Network:
     NB_OF_FEATURES = 1056
-    LABELS = 11
+    LABELS = 250
 
     def __init__(self, threads, seed=42):
         # Create an empty graph and a session
@@ -60,7 +60,7 @@ class Network:
 
         with self.session.graph.as_default():
             # Inputs
-            self.images = tf.placeholder(tf.uint8, [None, self.NB_OF_FEATURES], name="images")
+            self.images = tf.placeholder(tf.float64, [None, self.NB_OF_FEATURES], name="images")
             self.labels = tf.placeholder(tf.int64, [None], name="labels")
             self.is_training = tf.placeholder(tf.bool, [], name="is_training")
 
@@ -89,6 +89,10 @@ class Network:
                 for dataset in ["dev", "test"]:
                     self.summaries[dataset] = [tf.contrib.summary.scalar(dataset + "/loss", self.given_loss),
                                                tf.contrib.summary.scalar(dataset + "/accuracy", self.given_accuracy)]
+
+            self.session.run(tf.global_variables_initializer())
+            with summary_writer.as_default():
+                tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
     def train_batch(self, images, labels):
         self.session.run([self.training, self.summaries["train"]], {self.images: images, self.labels: labels, self.is_training: True})
@@ -127,6 +131,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", default=None, type=int, help="Batch size.")
     parser.add_argument("--epochs", default=None, type=int, help="Number of epochs.")
+    parser.add_argument("--arch", default=None, type=str, help="arch")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
     args = parser.parse_args()
 
