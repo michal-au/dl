@@ -28,29 +28,33 @@ class Network:
             # TODO(we): Choose RNN cell class according to args.rnn_cell (LSTM and GRU
             # should be supported, using tf.nn.rnn_cell.{BasicLSTM,GRU}Cell).
 
-            # TODO(we): Create word embeddings for num_words of dimensionality args.we_dim.
+            # TODO(we): Create word embeddings for num_words of dimensionality args.we_dim
+            # using `tf.get_variable`.
 
-            # TODO(we): Embed self.word_ids using the word embeddings.
+            # TODO(we): Embed self.word_ids according to the word embeddings, by utilizing
+            # `tf.nn.embedding_lookup`.
 
             # Character-level word embeddings (CLE)
 
             # TODO: Generate character embeddings for num_chars of dimensionality args.cle_dim.
 
-            # TODO: Embed self.charseqs using the character embeddings.
+            # TODO: Embed self.charseqs (list of unique words in the batch) using the character embeddings.
 
             # TODO: Use `tf.nn.bidirectional_dynamic_rnn` to process embedded self.charseqs using
             # a GRU cell of dimensionality `args.cle_dim`.
 
-            # TODO: Sum the resulting fwd and bwd state to generate character-level word embedding (CLE).
+            # TODO: Sum the resulting fwd and bwd state to generate character-level word embedding (CLE)
+            # of unique words in the batch.
 
-            # TODO: For each word, use suitable CLE according to self.charseq_ids.
+            # TODO: Generate CLEs of all words in the batch by indexing the just computed embeddings
+            # by self.charseq_ids (using tf.nn.embedding_lookup).
 
             # TODO: Concatenate the word embeddings (computed above) and the CLE (in this order).
 
             # TODO(we): Using tf.nn.bidirectional_dynamic_rnn, process the embedded inputs.
-            # Use given rnn_cell (different for fwd and bwd direction).
+            # Use given rnn_cell (different for fwd and bwd direction) and self.sentence_lens.
 
-            # TODO(we): Concatenate the outputs for fwd and bwd directions.
+            # TODO(we): Concatenate the outputs for fwd and bwd directions (in the third dimension).
 
             # TODO(we): Add a dense layer (without activation) into num_tags classes and
             # store result in `output_layer`.
