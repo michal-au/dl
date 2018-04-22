@@ -154,15 +154,19 @@ if __name__ == "__main__":
     network.construct(args)
 
     # Train
+    acc_max = 0
     for i in range(args.epochs):
         while not train.epoch_finished():
             images, labels = train.next_batch(args.batch_size)
             network.train_batch(images, labels)
 
-        network.evaluate("dev", dev, args.batch_size)
+        acc = network.evaluate("dev", dev, args.batch_size)
 
-    # Predict test data
-    with open("{}/nsketch_transfer_test.txt".format(args.logdir), "w") as test_file:
-        labels = network.predict(test, args.batch_size)
-        for label in labels:
-            print(label, file=test_file)
+        if acc > acc_max and acc > 0.45:
+            print("new best acc: {}".format(acc))
+            # Predict test data
+            with open("{}/nsketch_transfer_test-{}.txt".format(args.logdir, acc), "w") as test_file:
+                labels = network.predict(test, args.batch_size)
+                for label in labels:
+                    print(label, file=test_file)
+            acc_max = acc
