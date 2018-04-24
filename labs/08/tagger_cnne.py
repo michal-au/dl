@@ -33,27 +33,45 @@ class Network:
 
             # TODO(we): Embed self.word_ids according to the word embeddings, by utilizing
             # `tf.nn.embedding_lookup`.
+            cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
+            fw_cell = cell_constructor(args.rnn_cell_dim)
+            bw_cell = cell_constructor(args.rnn_cell_dim)
+
+            word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
+
+            words_word_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
 
             # Convolutional word embeddings (CNNE)
 
             # TODO: Generate character embeddings for num_chars of dimensionality args.cle_dim.
+            char_embeddings = tf.get_variable(name="char_embeddings", shape=[num_chars, args.cle_dim])
 
             # TODO: Embed self.charseqs (list of unique words in the batch) using the character embeddings.
+            charseqs_embedded = tf.nn.embedding_lookup(char_embeddings, self.charseqs, name="char_embedding_lookup")
 
             # TODO: For kernel sizes of {2..args.cnne_max}, do the following:
             # - use `tf.layers.conv1d` on input embedded characters, with given kernel size
             #   and `args.cnne_filters`; use `VALID` padding, stride 1 and no activation.
             # - perform channel-wise max-pooling over the whole word, generating output
             #   of size `args.cnne_filters` for every word.
+            kernel_specific_embs = []
+            for ks in range(2, args.cnne_max + 1):
+                convoluted_seq = tf.layers.conv1d(charseqs_embedded, args.cnne_filters, ks, strides=1, padding="VALID")
+                kernel_specific_embs.append(
+                    tf.layers.max_pooling1d(convoluted_seq, 1000, strides=1, padding="same")
+                )
 
             # TODO: Concatenate the computed features (in the order of kernel sizes 2..args.cnne_max).
             # Consequently, each word from `self.charseqs` is represented using convolutional embedding
             # (CNNE) of size `(args.cnne_max-1)*args.cnne_filters`.
+            cnn_embeddings = tf.concat(kernel_specific_embs, axis=2)
 
             # TODO: Generate CNNEs of all words in the batch by indexing the just computed embeddings
             # by self.charseq_ids (using tf.nn.embedding_lookup).
+            words_cnn_embedded = tf.nn.embedding_lookup(cnn_embeddings, self.charseq_ids)
 
             # TODO: Concatenate the word embeddings (computed above) and the CNNE (in this order).
+            words_embedded = tf.concat([words_word_embedded, words_cnn_embedded], axis=2)
 
             # TODO(we): Using tf.nn.bidirectional_dynamic_rnn, process the embedded inputs.
             # Use given rnn_cell (different for fwd and bwd direction) and self.sentence_lens.

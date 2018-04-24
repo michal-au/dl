@@ -24,29 +24,40 @@ class Network:
 
             # TODO: Choose RNN cell class according to args.rnn_cell (LSTM and GRU
             # should be supported, using tf.nn.rnn_cell.{BasicLSTM,GRU}Cell).
+            cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
+            fw_cell = cell_constructor(args.rnn_cell_dim)
+            bw_cell = cell_constructor(args.rnn_cell_dim)
 
             # TODO: Create word embeddings for num_words of dimensionality args.we_dim
             # using `tf.get_variable`.
+            word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
 
             # TODO: Embed self.word_ids according to the word embeddings, by utilizing
             # `tf.nn.embedding_lookup`.
+            words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
 
             # TODO: Using tf.nn.bidirectional_dynamic_rnn, process the embedded inputs.
             # Use given rnn_cell (different for fwd and bwd direction) and self.sentence_lens.
+            rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, words_embedded, sequence_length=self.sentence_lens, dtype=tf.float32)
 
             # TODO: Concatenate the outputs for fwd and bwd directions (in the third dimension).
+            rnn_output = tf.concat(rnn_outputs, axis=2)
 
             # TODO: Add a dense layer (without activation) into num_tags classes and
             # store result in `output_layer`.
+            output_layer = tf.layers.dense(rnn_output, num_tags, activation=None)
 
             # TODO: Generate `self.predictions`.
+            self.predictions = tf.argmax(output_layer, axis=2)
 
             # TODO: Generate `weights` as a 1./0. mask of valid/invalid words (using `tf.sequence_mask`).
+            weights = tf.sequence_mask(self.sentence_lens, dtype=tf.float32)
 
             # Training
 
             # TODO: Define `loss` using `tf.losses.sparse_softmax_cross_entropy`, but additionally
             # use `weights` parameter to mask-out invalid words.
+            loss = tf.losses.sparse_softmax_cross_entropy(self.tags, output_layer, weights=weights)
 
             global_step = tf.train.create_global_step()
             self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
