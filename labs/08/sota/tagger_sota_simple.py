@@ -43,6 +43,13 @@ class Network:
                                                                        intra_op_parallelism_threads=threads))
 
     def construct(self, args, num_words, num_chars, num_tags):
+        def construct_layer(config_line, input_layer):
+            layer_type, *params = config_line.split("-")
+            if layer_type == "R":
+                return tf.layers.dense(input_layer, int(params[0]), activation=tf.nn.relu)
+            elif layer_type == "D":
+                return tf.layers.dropout(input_layer, float(params[0]), training=self.is_training)
+
         with self.session.graph.as_default():
             # Inputs
             self.sentence_lens = tf.placeholder(tf.int32, [None], name="sentence_lens")
@@ -57,8 +64,28 @@ class Network:
             bw_cell = cell_constructor(args.rnn_cell_dim)
             word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
             words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
+
+            if args.cle_dim:
+                char_embeddings = tf.get_variable(name="char_embeddings", shape=[num_chars, args.cle_dim])
+                charseqs_embedded = tf.nn.embedding_lookup(char_embeddings, self.charseqs, name="char_embedding_lookup")
+                kernel_specific_embs = []
+                for ks in range(2, args.cnne_max + 1):
+                    convoluted_seq = tf.layers.conv1d(charseqs_embedded, args.cnne_filters, ks, strides=1, padding="valid")
+                    kernel_specific_embs.append(
+                        tf.layers.max_pooling1d(convoluted_seq, 1000, strides=1, padding="same")[:,1,:]
+                    )
+                cnn_embeddings = tf.concat(kernel_specific_embs, axis=1)
+                words_cnn_embedded = tf.nn.embedding_lookup(cnn_embeddings, self.charseq_ids)
+                words_embedded = tf.concat([words_embedded, words_cnn_embedded], axis=2)
+
             rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, words_embedded, sequence_length=self.sentence_lens, dtype=tf.float32)
             rnn_output = tf.concat(rnn_outputs, axis=2, name="concat_rnn_outputs")
+
+            if args.rnn_output_process_architecture:
+                hidden_layer = rnn_output
+                for layer_config_line in args.rnn_output_process_architecture.split(","):
+                    hidden_layer = construct_layer(layer_config_line, hidden_layer)
+                rnn_output = hidden_layer
 
             output_layer = tf.layers.dense(rnn_output, num_tags, activation=None)
             self.predictions = tf.argmax(output_layer, axis=2)
@@ -140,6 +167,12 @@ if __name__ == "__main__":
     parser.add_argument("--rnn_cell_dim", default=64, type=int, help="RNN cell dimension.")
     parser.add_argument("--we_dim", default=128, type=int, help="Word embedding dimension.")
     parser.add_argument("--max_sents", default=None, type=int, help="Nb of senteces used for training")
+    parser.add_argument("--rnn_output_process_architecture", default=None, type=str)
+
+    parser.add_argument("--cle_dim", default=0, type=int, help="Character-level embedding dimension.")
+    parser.add_argument("--cnne_filters", default=16, type=int, help="CNN embedding filters per length.")
+    parser.add_argument("--cnne_max", default=4, type=int, help="Maximum CNN filter length.")
+
     args = parser.parse_args()
 
     # Create logdir name
