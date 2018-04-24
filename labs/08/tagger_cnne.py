@@ -56,39 +56,48 @@ class Network:
             #   of size `args.cnne_filters` for every word.
             kernel_specific_embs = []
             for ks in range(2, args.cnne_max + 1):
-                convoluted_seq = tf.layers.conv1d(charseqs_embedded, args.cnne_filters, ks, strides=1, padding="VALID")
+                convoluted_seq = tf.layers.conv1d(charseqs_embedded, args.cnne_filters, ks, strides=1, padding="valid")
                 kernel_specific_embs.append(
-                    tf.layers.max_pooling1d(convoluted_seq, 1000, strides=1, padding="same")
+                    tf.layers.max_pooling1d(convoluted_seq, 1000, strides=1, padding="same")[:,1,:]
                 )
+            print(kernel_specific_embs)
 
             # TODO: Concatenate the computed features (in the order of kernel sizes 2..args.cnne_max).
             # Consequently, each word from `self.charseqs` is represented using convolutional embedding
             # (CNNE) of size `(args.cnne_max-1)*args.cnne_filters`.
-            cnn_embeddings = tf.concat(kernel_specific_embs, axis=2)
-
+            cnn_embeddings = tf.concat(kernel_specific_embs, axis=1)
+            print(cnn_embeddings)
             # TODO: Generate CNNEs of all words in the batch by indexing the just computed embeddings
             # by self.charseq_ids (using tf.nn.embedding_lookup).
             words_cnn_embedded = tf.nn.embedding_lookup(cnn_embeddings, self.charseq_ids)
-
+            print(words_cnn_embedded)
+            print(words_word_embedded)
             # TODO: Concatenate the word embeddings (computed above) and the CNNE (in this order).
             words_embedded = tf.concat([words_word_embedded, words_cnn_embedded], axis=2)
 
             # TODO(we): Using tf.nn.bidirectional_dynamic_rnn, process the embedded inputs.
             # Use given rnn_cell (different for fwd and bwd direction) and self.sentence_lens.
-
+            rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, words_embedded,
+                                                             sequence_length=self.sentence_lens, dtype=tf.float32)
             # TODO(we): Concatenate the outputs for fwd and bwd directions (in the third dimension).
+            rnn_output = tf.concat(rnn_outputs, axis=2)
 
             # TODO(we): Add a dense layer (without activation) into num_tags classes and
             # store result in `output_layer`.
+            output_layer = tf.layers.dense(rnn_output, num_tags, activation=None)
 
             # TODO(we): Generate `self.predictions`.
+            self.predictions = tf.argmax(output_layer, axis=2)
 
             # TODO(we): Generate `weights` as a 1./0. mask of valid/invalid words (using `tf.sequence_mask`).
+            weights = tf.sequence_mask(self.sentence_lens, dtype=tf.float32)
 
             # Training
 
             # TODO(we): Define `loss` using `tf.losses.sparse_softmax_cross_entropy`, but additionally
             # use `weights` parameter to mask-out invalid words.
+            loss = tf.losses.sparse_softmax_cross_entropy(self.tags, output_layer, weights=weights)
+
             global_step = tf.train.create_global_step()
             self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 

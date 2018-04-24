@@ -106,16 +106,7 @@ class Network:
             # use `weights` parameter to mask-out invalid words.
             loss = tf.losses.sparse_softmax_cross_entropy(self.tags, output_layer, weights=weights)
 
-            rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, words_embedded,
-                                                             sequence_length=self.sentence_lens, dtype=tf.float32)
-            rnn_output = tf.concat(rnn_outputs, axis=2)
-            output_layer = tf.layers.dense(rnn_output, num_tags, activation=None)
-            self.predictions = tf.argmax(output_layer, axis=2)
-            weights = tf.sequence_mask(self.sentence_lens, dtype=tf.float32)
-            loss = tf.losses.sparse_softmax_cross_entropy(self.tags, output_layer, weights=weights)
 
-            global_step = tf.train.create_global_step()
-            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.current_accuracy, self.update_accuracy = tf.metrics.accuracy(self.tags, self.predictions, weights=weights)
