@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class MorphoDataset:
     """Class capable of loading morphological datasets in vertical format.
 

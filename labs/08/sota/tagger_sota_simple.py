@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import numpy as np
 import tensorflow as tf
+import gensim
 
 import morpho_dataset
+
 
 class MorphoAnalyzer:
     """ Loader for data of morphological analyzer.
@@ -173,6 +175,8 @@ if __name__ == "__main__":
     parser.add_argument("--cnne_filters", default=16, type=int, help="CNN embedding filters per length.")
     parser.add_argument("--cnne_max", default=4, type=int, help="Maximum CNN filter length.")
 
+    parser.add_argument("--pretrained_w2v", default=None, type=str, help="Path to pretrained gensim w2v model.")
+
     args = parser.parse_args()
 
     # Create logdir name
@@ -191,6 +195,12 @@ if __name__ == "__main__":
     if args.analyzer:
         analyzer_dictionary = MorphoAnalyzer("czech-pdt-analysis-dictionary.txt")
         analyzer_guesser = MorphoAnalyzer("czech-pdt-analysis-guesser.txt")
+
+    if args.pretrained_w2v:
+        w2v_model = gensim.models.Word2Vec.load(args.pretrained_w2v)
+        for word_form in enumerate(train.factors[train.FORMS].words):
+            w2v_model[word_form]
+
 
     # Construct the network
     network = Network(threads=args.threads)
