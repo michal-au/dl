@@ -52,12 +52,22 @@ class Network:
             self.charseq_ids = tf.placeholder(tf.int32, [None, None], name="charseq_ids")
             self.tags = tf.placeholder(tf.int32, [None, None], name="tags")
 
-            # TODO: Training.
-            # Define:
-            # - loss in `loss`
-            # - training in `self.training`
-            # - predictions in `self.predictions`
-            # - weights in `weights`
+            cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
+            fw_cell = cell_constructor(args.rnn_cell_dim)
+            bw_cell = cell_constructor(args.rnn_cell_dim)
+            word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
+            words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
+            rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, words_embedded, sequence_length=self.sentence_lens, dtype=tf.float32)
+            rnn_output = tf.concat(rnn_outputs, axis=2, name="concat_rnn_outputs")
+
+            output_layer = tf.layers.dense(rnn_output, num_tags, activation=None)
+            self.predictions = tf.argmax(output_layer, axis=2)
+            weights = tf.sequence_mask(self.sentence_lens, dtype=tf.float32)
+
+            # Training
+            loss = tf.losses.sparse_softmax_cross_entropy(self.tags, output_layer, weights=weights)
+            global_step = tf.train.create_global_step()
+            self.training = tf.train.AdamOptimizer().minimize(loss, global_step=global_step, name="training")
 
             # Summaries
             self.current_accuracy, self.update_accuracy = tf.metrics.accuracy(self.tags, self.predictions, weights=weights)
@@ -122,9 +132,14 @@ if __name__ == "__main__":
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", default=None, type=int, help="Batch size.")
-    parser.add_argument("--epochs", default=None, type=int, help="Number of epochs.")
+    parser.add_argument("--batch_size", default=10, type=int, help="Batch size.")
+    parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+    parser.add_argument("--analyzer", default=False, type=bool, help="Should the morpho analyzer be used?")
+    parser.add_argument("--rnn_cell", default="LSTM", type=str, help="RNN cell type.")
+    parser.add_argument("--rnn_cell_dim", default=64, type=int, help="RNN cell dimension.")
+    parser.add_argument("--we_dim", default=128, type=int, help="Word embedding dimension.")
+    parser.add_argument("--max_sents", default=None, type=int, help="Nb of senteces used for training")
     args = parser.parse_args()
 
     # Create logdir name
@@ -136,12 +151,13 @@ if __name__ == "__main__":
     if not os.path.exists("logs"): os.mkdir("logs") # TF 1.6 will do this by itself
 
     # Load the data
-    train = morpho_dataset.MorphoDataset("czech-pdt-train.txt")
+    train = morpho_dataset.MorphoDataset("czech-pdt-train.txt", max_sentences=args.max_sents)
     dev = morpho_dataset.MorphoDataset("czech-pdt-dev.txt", train=train, shuffle_batches=False)
     test = morpho_dataset.MorphoDataset("czech-pdt-test.txt", train=train, shuffle_batches=False)
 
-    analyzer_dictionary = MorphoAnalyzer("czech-pdt-analysis-dictionary.txt")
-    analyzer_guesser = MorphoAnalyzer("czech-pdt-analysis-guesser.txt")
+    if args.analyzer:
+        analyzer_dictionary = MorphoAnalyzer("czech-pdt-analysis-dictionary.txt")
+        analyzer_guesser = MorphoAnalyzer("czech-pdt-analysis-guesser.txt")
 
     # Construct the network
     network = Network(threads=args.threads)
