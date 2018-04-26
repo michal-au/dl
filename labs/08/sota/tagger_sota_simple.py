@@ -230,6 +230,7 @@ if __name__ == "__main__":
 
             tag_mask[(row_idcs, column_idcs)] = True
             tag_mask = tag_mask.astype(np.float32)
+            if not os.path.exists("data"): os.mkdir("data")
             np.save("data/tag_mask", tag_mask)
 
     # TODO: vlastni embeddingy jako inicializace
