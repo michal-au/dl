@@ -61,14 +61,15 @@ class Network:
             self.charseq_ids = tf.placeholder(tf.int32, [None, None], name="charseq_ids")
             self.tags = tf.placeholder(tf.int32, [None, None], name="tags")
 
-            self.tags_mask = tf.placeholder(tf.float32, [None, num_tags], name="tags_mask")
+            self.tags_mask = tf.placeholder(tf.float32, [None, None, num_tags], name="tags_mask")
 
             cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
             fw_cell = cell_constructor(args.rnn_cell_dim)
             bw_cell = cell_constructor(args.rnn_cell_dim)
             word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
+            print(self.word_ids)
             words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
-
+            print(words_embedded)
             if args.cle_dim:
                 char_embeddings = tf.get_variable(name="char_embeddings", shape=[num_chars, args.cle_dim])
                 charseqs_embedded = tf.nn.embedding_lookup(char_embeddings, self.charseqs, name="char_embedding_lookup")
@@ -91,17 +92,14 @@ class Network:
                     hidden_layer = construct_layer(layer_config_line, hidden_layer)
                 rnn_output = hidden_layer
 
-            output_layer = tf.layers.dense(rnn_output, num_tags, activation=None)
+            output_layer = tf.layers.dense(rnn_output, num_tags, activation=None, name="output_layer")
+
+            if args.analyzer:
+                output_layer = tf.multiply(output_layer, self.tags_mask, name="masking")
 
             self.predictions = tf.argmax(output_layer, axis=2)
-            weights = tf.sequence_mask(self.sentence_lens, dtype=tf.float32)
-            if args.analyzer:
-                # tag_mask_tensor = tf.get_variable("tag_mask", shape=tag_mask.shape)  # tag_mask
-                # tag_mask_tensor = tf.get_variable("tag_mask", shape=tag_mask.shape, trainable=False)
-                # tag_mask_tensor = tf.assign(tag_mask_tensor, tag_mask)
-                words_tags_masked = tf.nn.embedding_lookup(self.tags_mask, self.word_ids, name="tag_mask_lookup")
-                output_layer = tf.multiply(output_layer, words_tags_masked, name="masking")
 
+            weights = tf.sequence_mask(self.sentence_lens, dtype=tf.float32)
             # Training
             loss = tf.losses.sparse_softmax_cross_entropy(self.tags, output_layer, weights=weights)
             global_step = tf.train.create_global_step()
@@ -130,8 +128,7 @@ class Network:
     def train_epoch(self, train, batch_size, tags_masks):
         while not train.epoch_finished():
             sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens = train.next_batch(batch_size, including_charseqs=True)
-            batch_tags_masks = tags_masks[word_ids, :]
-            print(batch_tags_masks)
+            batch_tags_masks = tags_masks[word_ids[train.FORMS], :]
             self.session.run(self.reset_metrics)
             self.session.run([self.training, self.summaries["train"]],
                              {self.sentence_lens: sentence_lens,
@@ -141,15 +138,18 @@ class Network:
                               self.tags_mask: batch_tags_masks
                               })
 
-    def evaluate(self, dataset_name, dataset, batch_size):
+    def evaluate(self, dataset_name, dataset, batch_size, tags_masks):
         self.session.run(self.reset_metrics)
         while not dataset.epoch_finished():
             sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens = dataset.next_batch(batch_size, including_charseqs=True)
+            batch_tags_masks = tags_masks[word_ids[dataset.FORMS], :]
             self.session.run([self.update_accuracy, self.update_loss],
                              {self.sentence_lens: sentence_lens,
                               self.charseqs: charseqs[train.FORMS], self.charseq_lens: charseq_lens[train.FORMS],
                               self.word_ids: word_ids[train.FORMS], self.charseq_ids: charseq_ids[train.FORMS],
-                              self.tags: word_ids[train.TAGS]})
+                              self.tags: word_ids[train.TAGS],
+                              self.tags_mask: batch_tags_masks
+                              })
         return self.session.run([self.current_accuracy, self.summaries[dataset_name]])[0]
 
     def predict(self, dataset, batch_size):
@@ -213,13 +213,14 @@ if __name__ == "__main__":
         except FileNotFoundError:
             analyzer_dictionary = MorphoAnalyzer("czech-pdt-analysis-dictionary.txt")
             analyzer_guesser = MorphoAnalyzer("czech-pdt-analysis-guesser.txt")
-            height, width = len(train.factors[train.FORMS].words), len(train.factors[train.TAGS].words)
+            whole_train = morpho_dataset.MorphoDataset("czech-pdt-train.txt")
+            height, width = len(whole_train.factors[whole_train.FORMS].words), len(whole_train.factors[whole_train.TAGS].words)
             tag_mask = np.zeros([height, width], dtype=np.bool)
 
             row_idcs, column_idcs = [], []
-            for idx, w in enumerate(train.factors[train.FORMS].words):
+            for idx, w in enumerate(whole_train.factors[whole_train.FORMS].words):
                 tags = analyzer_dictionary.get(w) or analyzer_guesser.get(w)
-                tag_ids = [train.factors[train.TAGS].words_map.get(lt.tag) for lt in tags if train.factors[train.TAGS].words_map.get(lt.tag)]
+                tag_ids = [whole_train.factors[whole_train.TAGS].words_map.get(lt.tag) for lt in tags if whole_train.factors[whole_train.TAGS].words_map.get(lt.tag)]
                 if not tag_ids:
                     row_idcs.extend([idx] * width)
                     column_idcs.extend(range(width))
@@ -246,8 +247,7 @@ if __name__ == "__main__":
     # Train
     for i in range(args.epochs):
         network.train_epoch(train, args.batch_size, tag_mask)
-        exit()
-        network.evaluate("dev", dev, args.batch_size)
+        network.evaluate("dev", dev, args.batch_size, tag_mask)
 
     # Predict test data
     with open("{}/tagger_sota_test.txt".format(args.logdir), "w") as test_file:
