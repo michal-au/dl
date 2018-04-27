@@ -4,36 +4,7 @@ import tensorflow as tf
 import gensim
 
 import morpho_dataset
-
-
-class MorphoAnalyzer:
-    """ Loader for data of morphological analyzer.
-
-    The loaded analyzer provides an only method `get(word)` returning
-    a list of analyses, each containing two fields `lemma` and `tag`.
-    If an analysis of the word is not found, an empty list is returned.
-    """
-
-    class LemmaTag:
-        def __init__(self, lemma, tag):
-            self.lemma = lemma
-            self.tag = tag
-
-    def __init__(self, filename):
-        self.analyses = {}
-
-        with open(filename, "r", encoding="utf-8") as analyzer_file:
-            for line in analyzer_file:
-                line = line.rstrip("\n")
-                columns = line.split("\t")
-
-                analyses = []
-                for i in range(1, len(columns) - 1, 2):
-                    analyses.append(MorphoAnalyzer.LemmaTag(columns[i], columns[i + 1]))
-                self.analyses[columns[0]] = analyses
-
-    def get(self, word):
-        return self.analyses.get(word, [])
+import tag_mask as tm
 
 
 class Network:
@@ -67,9 +38,8 @@ class Network:
             fw_cell = cell_constructor(args.rnn_cell_dim)
             bw_cell = cell_constructor(args.rnn_cell_dim)
             word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
-            print(self.word_ids)
             words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
-            print(words_embedded)
+
             if args.cle_dim:
                 char_embeddings = tf.get_variable(name="char_embeddings", shape=[num_chars, args.cle_dim])
                 charseqs_embedded = tf.nn.embedding_lookup(char_embeddings, self.charseqs, name="char_embedding_lookup")
@@ -125,31 +95,29 @@ class Network:
             with summary_writer.as_default():
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
-    def train_epoch(self, train, batch_size, tags_masks):
-        while not train.epoch_finished():
-            sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens = train.next_batch(batch_size, including_charseqs=True)
-            batch_tags_masks = tags_masks[word_ids[train.FORMS], :]
-            self.session.run(self.reset_metrics)
-            self.session.run([self.training, self.summaries["train"]],
-                             {self.sentence_lens: sentence_lens,
-                              self.charseqs: charseqs[train.FORMS], self.charseq_lens: charseq_lens[train.FORMS],
-                              self.word_ids: word_ids[train.FORMS], self.charseq_ids: charseq_ids[train.FORMS],
-                              self.tags: word_ids[train.TAGS],
-                              self.tags_mask: batch_tags_masks
-                              })
+    def _placeholder_dict(self, sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens):
+        placeholder_dict = {
+            self.sentence_lens: sentence_lens,
+            self.charseqs: charseqs[train.FORMS],
+            self.charseq_lens: charseq_lens[train.FORMS],
+            self.word_ids: word_ids[train.FORMS],
+            self.charseq_ids: charseq_ids[train.FORMS],
+            self.tags: word_ids[train.TAGS]
+        }
+        if tag_mask:
+            batch_tags_masks = tag_mask[word_ids[train.FORMS], :]
+            placeholder_dict.update({self.tag_mask: batch_tags_masks})
+        return placeholder_dict
 
-    def evaluate(self, dataset_name, dataset, batch_size, tags_masks):
+    def train_epoch(self, train, batch_size, tag_mask):
+        while not train.epoch_finished():
+            self.session.run(self.reset_metrics)
+            self.session.run([self.training, self.summaries["train"]], self._placeholder_dict(*train.next_batch(batch_size, including_charseqs=True), tag_mask))
+
+    def evaluate(self, dataset_name, dataset, batch_size, tag_mask):
         self.session.run(self.reset_metrics)
         while not dataset.epoch_finished():
-            sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens = dataset.next_batch(batch_size, including_charseqs=True)
-            batch_tags_masks = tags_masks[word_ids[dataset.FORMS], :]
-            self.session.run([self.update_accuracy, self.update_loss],
-                             {self.sentence_lens: sentence_lens,
-                              self.charseqs: charseqs[train.FORMS], self.charseq_lens: charseq_lens[train.FORMS],
-                              self.word_ids: word_ids[train.FORMS], self.charseq_ids: charseq_ids[train.FORMS],
-                              self.tags: word_ids[train.TAGS],
-                              self.tags_mask: batch_tags_masks
-                              })
+            self.session.run([self.update_accuracy, self.update_loss], self._placeholder_dict(*dataset.next_batch(batch_size, including_charseqs=True), tag_mask))
         return self.session.run([self.current_accuracy, self.summaries[dataset_name]])[0]
 
     def predict(self, dataset, batch_size):
@@ -206,32 +174,7 @@ if __name__ == "__main__":
     dev = morpho_dataset.MorphoDataset("czech-pdt-dev.txt", train=train, shuffle_batches=False)
     test = morpho_dataset.MorphoDataset("czech-pdt-test.txt", train=train, shuffle_batches=False)
 
-    tag_mask = None
-    if args.analyzer:
-        try:
-            tag_mask = np.load("data/tag_mask.npy")
-        except FileNotFoundError:
-            analyzer_dictionary = MorphoAnalyzer("czech-pdt-analysis-dictionary.txt")
-            analyzer_guesser = MorphoAnalyzer("czech-pdt-analysis-guesser.txt")
-            whole_train = morpho_dataset.MorphoDataset("czech-pdt-train.txt")
-            height, width = len(whole_train.factors[whole_train.FORMS].words), len(whole_train.factors[whole_train.TAGS].words)
-            tag_mask = np.zeros([height, width], dtype=np.bool)
-
-            row_idcs, column_idcs = [], []
-            for idx, w in enumerate(whole_train.factors[whole_train.FORMS].words):
-                tags = analyzer_dictionary.get(w) or analyzer_guesser.get(w)
-                tag_ids = [whole_train.factors[whole_train.TAGS].words_map.get(lt.tag) for lt in tags if whole_train.factors[whole_train.TAGS].words_map.get(lt.tag)]
-                if not tag_ids:
-                    row_idcs.extend([idx] * width)
-                    column_idcs.extend(range(width))
-                else:
-                    row_idcs.extend([idx] * len(tag_ids))
-                    column_idcs.extend(tag_ids)
-
-            tag_mask[(row_idcs, column_idcs)] = True
-            tag_mask = tag_mask.astype(np.float32)
-            if not os.path.exists("data"): os.mkdir("data")
-            np.save("data/tag_mask", tag_mask)
+    tag_mask = tm.get() if args.analyzer else None
 
     # TODO: vlastni embeddingy jako inicializace
     # if args.pretrained_w2v:
