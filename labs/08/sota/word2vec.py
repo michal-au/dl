@@ -42,36 +42,23 @@ if __name__ == "__main__":
     args.datafile = "data/{}-{}-{}".format(
         os.path.basename(__file__),
         datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
-        ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value) for key, value in sorted(vars(args).items())))
+        ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value.replace('/','|')) for key, value in sorted(vars(args).items())))
     )
     if not os.path.exists("data"): os.mkdir("data")
 
-    # sentences = WikiSentences("data/wiki-cs-tokenized.txt")
+    #sentences = WikiSentences("data/wiki-cs-tokenized.txt")
+    #model = gensim.models.Word2Vec(sentences, min_count=args.min_word_count, size=args.we_dim, workers=args.threads)
+    #model.save(args.datafile)
 
     # Load the data
     train = morpho_dataset.MorphoDataset("czech-pdt-train.txt", shuffle_batches=False)
-    dev = morpho_dataset.MorphoDataset("czech-pdt-dev.txt", shuffle_batches=False, train=train, all_words=train._factors[train.FORMS])
-    test = morpho_dataset.MorphoDataset("czech-pdt-test.txt", shuffle_batches=False, train=train, all_words=dev._factors[dev.FORMS])
-    # sentences = extract_sentences(dev)
-    # sentences.extend(extract_sentences(dev))
-    # sentences.extend(extract_sentences(test))
-    # model = gensim.models.Word2Vec(sentences, min_count=args.min_word_count, size=args.we_dim, workers=args.threads)
-    # model.save(args.datafile)
+    # dev = morpho_dataset.MorphoDataset("czech-pdt-dev.txt", shuffle_batches=False, train=train, all_words=train._factors[train.FORMS])
+    # test = morpho_dataset.MorphoDataset("czech-pdt-test.txt", shuffle_batches=False, train=train, all_words=dev._factors[dev.FORMS])
 
-    # # TODO: vyzkouset tvorbu embed pro slova z trenovacich/dev/test dat:
-    w2v_model = gensim.models.Word2Vec.load("data/word2vec.py-2018-04-27_105543-mwc=5,t=1,wd=128")
-    # print(w2v_model.wv.vector_size)
-    # len(train.factors[train.FORMS].words)
-    w2v = np.random.random((len(test.factors[test.FORMS].all_words), args.we_dim))
-    cnt, cnt2 = 0, 0
-    for idx, word in enumerate(test.factors[test.FORMS].words):
-        # print(word, w2v_model[word] if word in w2v_model else )
+    args.datafile = "data/word2vec.py-2018-04-27_105543-mwc=5,t=1,wd=128"
+    w2v_model = gensim.models.Word2Vec.load(args.datafile)
+    w2v = np.random.random((len(train.factors[train.FORMS].words), args.we_dim))
+    for idx, word in enumerate(train.factors[train.FORMS].words):
         if word in w2v_model:
             w2v[idx] = w2v_model[word]
-            cnt2 += 1
-        else:
-            cnt += 1
-    
-    print(w2v)
-    print(cnt, cnt2)
-    print(w2v.shape)
+    np.save(args.datafile + "-only-matching", w2v)

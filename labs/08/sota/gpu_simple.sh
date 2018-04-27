@@ -5,4 +5,4 @@ export LD_LIBRARY_PATH=/opt/cuda-9.0/lib64/:/opt/cuda/cudnn/7.0/lib64/
 cd /net/work/people/auersperger/npfl114/labs/08/sota/
 source ../../../.gpuvenv/bin/activate
 
-python tagger_sota_simple.py --rnn_output_process_architecture R-1600 --cle_dim 32 --analyzer 1
+python tagger_sota_simple.py --rnn_output_process_architecture R-1600 --cle_dim 32 --pretrained_w2v data/w2v

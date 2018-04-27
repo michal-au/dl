@@ -33,14 +33,17 @@ class Network:
             self.tags = tf.placeholder(tf.int32, [None, None], name="tags")
 
             self.tags_mask = tf.placeholder(tf.float32, [None, None, num_tags], name="tags_mask")
-            self.w2v = tf.placeholder(tf.float64, [None, None, args.we_dim], name="w2v")
+            #self.w2v = tf.placeholder(tf.float64, [None, None, args.we_dim], name="w2v")
 
             cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
             fw_cell = cell_constructor(args.rnn_cell_dim)
             bw_cell = cell_constructor(args.rnn_cell_dim)
-            word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
+            # word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
             if args.pretrained_w2v:
-                tf.assign(word_embeddings, self.w2v)
+                word_embeddings = tf.get_variable(name="word_embeddings", initializer=args.w2v)
+            else:
+                word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
+                # word_embeddings.assign(tf.cast(self.w2v, tf.float32))
             words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
 
             if args.cle_dim:
@@ -110,8 +113,8 @@ class Network:
         if tag_mask:
             batch_tags_masks = tag_mask[word_ids[morpho_dataset.MorphoDataset.FORMS], :]
             placeholder_dict.update({self.tag_mask: batch_tags_masks})
-        if w2v:
-            placeholder_dict.update({self.w2v: w2v[word_ids[morpho_dataset.MorphoDataset.FORMS], :]})
+        #if w2v:
+        #    placeholder_dict.update({self.w2v: w2v[word_ids[morpho_dataset.MorphoDataset.FORMS], :]})
         return placeholder_dict
 
     def train_epoch(self, train, batch_size, tag_mask, w2v):
@@ -170,7 +173,7 @@ if __name__ == "__main__":
     args.logdir = "logs/{}-{}-{}".format(
         os.path.basename(__file__),
         datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
-        ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value) for key, value in sorted(vars(args).items())))
+        ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), str(value).replace('/','|')) for key, value in sorted(vars(args).items())))
     )
     if not os.path.exists("logs"): os.mkdir("logs") # TF 1.6 will do this by itself
 
@@ -181,7 +184,7 @@ if __name__ == "__main__":
 
     tag_mask = tm.get() if args.analyzer else None
 
-    w2v = np.load(args.pretrained_w2v) if args.pretrained_w2v else None
+    args.w2v = np.load(args.pretrained_w2v).astype(np.float32) if args.pretrained_w2v else None
 
     # Construct the network
     network = Network(threads=args.threads)
@@ -190,8 +193,8 @@ if __name__ == "__main__":
 
     # Train
     for i in range(args.epochs):
-        network.train_epoch(train, args.batch_size, tag_mask, w2v)
-        network.evaluate("dev", dev, args.batch_size, tag_mask, w2v)
+        network.train_epoch(train, args.batch_size, tag_mask, args.w2v)
+        network.evaluate("dev", dev, args.batch_size, tag_mask, args.w2v)
 
     # Predict test data
     with open("{}/tagger_sota_test.txt".format(args.logdir), "w") as test_file:
