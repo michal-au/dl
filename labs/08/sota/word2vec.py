@@ -3,7 +3,7 @@ import gensim
 import logging
 import numpy as np
 
-# import morpho_dataset
+import morpho_dataset
 
 
 def extract_sentences(dataset):
@@ -46,31 +46,32 @@ if __name__ == "__main__":
     )
     if not os.path.exists("data"): os.mkdir("data")
 
-    sentences = WikiSentences("data/sample.txt")
+    # sentences = WikiSentences("data/wiki-cs-tokenized.txt")
+
     # Load the data
-    # train = morpho_dataset.MorphoDataset("czech-pdt-train.txt", shuffle_batches=False)
+    train = morpho_dataset.MorphoDataset("czech-pdt-train.txt", shuffle_batches=False)
     # dev = morpho_dataset.MorphoDataset("czech-pdt-dev.txt", shuffle_batches=False)
     # test = morpho_dataset.MorphoDataset("czech-pdt-test.txt", shuffle_batches=False)
     # sentences = extract_sentences(dev)
     # sentences.extend(extract_sentences(dev))
     # sentences.extend(extract_sentences(test))
-    model = gensim.models.Word2Vec(sentences, min_count=args.min_word_count, size=args.we_dim, workers=args.threads)
-    model.save(args.datafile)
+    # model = gensim.models.Word2Vec(sentences, min_count=args.min_word_count, size=args.we_dim, workers=args.threads)
+    # model.save(args.datafile)
 
     # # TODO: vyzkouset tvorbu embed pro slova z trenovacich/dev/test dat:
-    # w2v_model = gensim.models.Word2Vec.load("data/word2vec.py-2018-04-24_195427-mwc=5,t=2,wd=128")
+    w2v_model = gensim.models.Word2Vec.load("data/word2vec.py-2018-04-27_105543-mwc=5,t=1,wd=128")
     # print(w2v_model.wv.vector_size)
     # len(train.factors[train.FORMS].words)
-    # w2v = np.random.random((len(train.factors[train.FORMS].words), args.we_dim))
-    # cnt, cnt2 = 0, 0
-    # for idx, word in enumerate(train.factors[train.FORMS].words):
-    #     # print(word, w2v_model[word] if word in w2v_model else )
-    #     if word in w2v_model:
-    #         w2v[idx] = w2v_model[word]
-    #         cnt2 += 1
-    #     else:
-    #         cnt += 1
-    #
-    # print(w2v)
-    # print(cnt, cnt2)
-    # print(w2v.shape)
+    w2v = np.random.random((len(train.factors[train.FORMS].words), args.we_dim))
+    cnt, cnt2 = 0, 0
+    for idx, word in enumerate(train.factors[train.FORMS].words):
+        # print(word, w2v_model[word] if word in w2v_model else )
+        if word in w2v_model:
+            w2v[idx] = w2v_model[word]
+            cnt2 += 1
+        else:
+            cnt += 1
+    
+    print(w2v)
+    print(cnt, cnt2)
+    print(w2v.shape)
