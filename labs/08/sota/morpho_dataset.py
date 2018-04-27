@@ -23,7 +23,7 @@ class MorphoDataset:
     FACTORS = 3
 
     class _Factor:
-        def __init__(self, train=None):
+        def __init__(self, train=None, all_words=None):
             self.words_map = train.words_map if train else {'<pad>': 0, '<unk>': 1}
             self.words = train.words if train else ['<pad>', '<unk>']
             self.word_ids = []
@@ -34,7 +34,11 @@ class MorphoDataset:
             self.charseq_ids = []
             self.strings = []
 
-    def __init__(self, filename, train=None, shuffle_batches=True, max_sentences=None, add_bow_eow=False):
+            self.all_words_map = all_words.all_words_map if all_words else {}
+            self.all_words = all_words.all_words if all_words else []
+            self.all_word_ids = []
+
+    def __init__(self, filename, train=None, shuffle_batches=True, max_sentences=None, add_bow_eow=False, all_words=None):
         """Load dataset from file in vertical format.
 
         Arguments:
@@ -49,7 +53,7 @@ class MorphoDataset:
         # Create word maps
         self._factors = []
         for f in range(self.FACTORS):
-            self._factors.append(self._Factor(train._factors[f] if train else None))
+            self._factors.append(self._Factor(train=train._factors[f] if train else None, all_words=all_words if all_words and f==self.FORMS else None))
 
         # Load the sentences
         with open(filename, "r", encoding="utf-8") as file:
@@ -64,6 +68,8 @@ class MorphoDataset:
                             factor.word_ids.append([])
                             factor.charseq_ids.append([])
                             factor.strings.append([])
+                            if f == self.FORMS:
+                                factor.all_word_ids.append([])
                         word = columns[f] if f < len(columns) else '<pad>'
                         factor.strings[-1].append(word)
 
@@ -86,6 +92,11 @@ class MorphoDataset:
                         factor.charseq_ids[-1].append(factor.charseqs_map[word])
 
                         # Word-level information
+                        if f == self.FORMS:
+                            if word not in factor.all_words_map:
+                                factor.all_words_map[word] = len(factor.all_words)
+                                factor.all_words.append(word)
+                            factor.all_word_ids[-1].append(factor.all_words_map[word])
                         if word not in factor.words_map:
                             if train:
                                 word = '<unk>'
@@ -174,6 +185,10 @@ class MorphoDataset:
             batch_word_ids.append(np.zeros([batch_size, max_sentence_len], np.int32))
             for i in range(batch_size):
                 batch_word_ids[-1][i, 0:batch_sentence_lens[i]] = factor.word_ids[batch_perm[i]]
+        batch_word_ids.append(np.zeros([batch_size, max_sentence_len], np.int32))
+        for i in range(batch_size):
+            print(">", self._factors[self.FORMS].all_word_ids[batch_perm[i]])
+            batch_word_ids[-1][i, 0:batch_sentence_lens[i]] = self._factors[self.FORMS].all_word_ids[batch_perm[i]]
 
         if not including_charseqs:
             return self._sentence_lens[batch_perm], batch_word_ids

@@ -182,7 +182,6 @@ if __name__ == "__main__":
     #     for word_form in enumerate(train.factors[train.FORMS].words):
     #         w2v_model[word_form]
 
-
     # Construct the network
     network = Network(threads=args.threads)
     network.construct(args, len(train.factors[train.FORMS].words), len(train.factors[train.FORMS].alphabet),
