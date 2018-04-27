@@ -33,17 +33,14 @@ class Network:
             self.tags = tf.placeholder(tf.int32, [None, None], name="tags")
 
             self.tags_mask = tf.placeholder(tf.float32, [None, None, num_tags], name="tags_mask")
-            #self.w2v = tf.placeholder(tf.float64, [None, None, args.we_dim], name="w2v")
 
             cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
             fw_cell = cell_constructor(args.rnn_cell_dim)
             bw_cell = cell_constructor(args.rnn_cell_dim)
-            # word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
             if args.pretrained_w2v:
                 word_embeddings = tf.get_variable(name="word_embeddings", initializer=args.w2v)
             else:
                 word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
-                # word_embeddings.assign(tf.cast(self.w2v, tf.float32))
             words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
 
             if args.cle_dim:
@@ -101,7 +98,7 @@ class Network:
             with summary_writer.as_default():
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
-    def _placeholder_dict(self, sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens, tag_mask, w2v):
+    def _placeholder_dict(self, sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens, tag_mask):
         placeholder_dict = {
             self.sentence_lens: sentence_lens,
             self.charseqs: charseqs[morpho_dataset.MorphoDataset.FORMS],
@@ -113,19 +110,22 @@ class Network:
         if tag_mask:
             batch_tags_masks = tag_mask[word_ids[morpho_dataset.MorphoDataset.FORMS], :]
             placeholder_dict.update({self.tag_mask: batch_tags_masks})
-        #if w2v:
-        #    placeholder_dict.update({self.w2v: w2v[word_ids[morpho_dataset.MorphoDataset.FORMS], :]})
         return placeholder_dict
 
-    def train_epoch(self, train, batch_size, tag_mask, w2v):
+    def train_epoch(self, train, batch_size, tag_mask, dev):
+        batches = 0
         while not train.epoch_finished():
             self.session.run(self.reset_metrics)
-            self.session.run([self.training, self.summaries["train"]], self._placeholder_dict(*train.next_batch(batch_size, including_charseqs=True), tag_mask, w2v))
+            self.session.run([self.training, self.summaries["train"]], self._placeholder_dict(*train.next_batch(batch_size, including_charseqs=True), tag_mask))
 
-    def evaluate(self, dataset_name, dataset, batch_size, tag_mask, w2v):
+            if batches == 0 and batches % 1000 == 0:
+                self.evaluate("dev", dev, args.batch_size, tag_mask)
+            batches += 1
+
+    def evaluate(self, dataset_name, dataset, batch_size, tag_mask):
         self.session.run(self.reset_metrics)
         while not dataset.epoch_finished():
-            self.session.run([self.update_accuracy, self.update_loss], self._placeholder_dict(*dataset.next_batch(batch_size, including_charseqs=True), tag_mask, w2v))
+            self.session.run([self.update_accuracy, self.update_loss], self._placeholder_dict(*dataset.next_batch(batch_size, including_charseqs=True), tag_mask))
         return self.session.run([self.current_accuracy, self.summaries[dataset_name]])[0]
 
     def predict(self, dataset, batch_size):
@@ -193,8 +193,8 @@ if __name__ == "__main__":
 
     # Train
     for i in range(args.epochs):
-        network.train_epoch(train, args.batch_size, tag_mask, args.w2v)
-        network.evaluate("dev", dev, args.batch_size, tag_mask, args.w2v)
+        network.train_epoch(train, args.batch_size, tag_mask, dev)
+        network.evaluate("dev", dev, args.batch_size, tag_mask)
 
     # Predict test data
     with open("{}/tagger_sota_test.txt".format(args.logdir), "w") as test_file:
