@@ -118,7 +118,7 @@ class Network:
             self.session.run(self.reset_metrics)
             self.session.run([self.training, self.summaries["train"]], self._placeholder_dict(*train.next_batch(batch_size, including_charseqs=True), tag_mask))
 
-            if batches == 0 and batches % 1000 == 0:
+            if batches != 0 and batches % 1000 == 0:
                 self.evaluate("dev", dev, args.batch_size, tag_mask)
             batches += 1
 
