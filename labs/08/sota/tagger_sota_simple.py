@@ -33,11 +33,14 @@ class Network:
             self.tags = tf.placeholder(tf.int32, [None, None], name="tags")
 
             self.tags_mask = tf.placeholder(tf.float32, [None, None, num_tags], name="tags_mask")
+            self.w2v = tf.placeholder(tf.float64, [None, None, args.we_dim], name="w2v")
 
             cell_constructor = tf.nn.rnn_cell.BasicLSTMCell if args.rnn_cell == "LSTM" else tf.nn.rnn_cell.GRUCell
             fw_cell = cell_constructor(args.rnn_cell_dim)
             bw_cell = cell_constructor(args.rnn_cell_dim)
             word_embeddings = tf.get_variable(name="word_embeddings", shape=[num_words, args.we_dim])
+            if args.pretrained_w2v:
+                tf.assign(word_embeddings, self.w2v)
             words_embedded = tf.nn.embedding_lookup(word_embeddings, self.word_ids, name="embedding_lookup")
 
             if args.cle_dim:
@@ -95,29 +98,31 @@ class Network:
             with summary_writer.as_default():
                 tf.contrib.summary.initialize(session=self.session, graph=self.session.graph)
 
-    def _placeholder_dict(self, sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens):
+    def _placeholder_dict(self, sentence_lens, word_ids, charseq_ids, charseqs, charseq_lens, tag_mask, w2v):
         placeholder_dict = {
             self.sentence_lens: sentence_lens,
-            self.charseqs: charseqs[train.FORMS],
-            self.charseq_lens: charseq_lens[train.FORMS],
-            self.word_ids: word_ids[train.FORMS],
-            self.charseq_ids: charseq_ids[train.FORMS],
-            self.tags: word_ids[train.TAGS]
+            self.charseqs: charseqs[morpho_dataset.MorphoDataset.FORMS],
+            self.charseq_lens: charseq_lens[morpho_dataset.MorphoDataset.FORMS],
+            self.word_ids: word_ids[morpho_dataset.MorphoDataset.FORMS],
+            self.charseq_ids: charseq_ids[morpho_dataset.MorphoDataset.FORMS],
+            self.tags: word_ids[morpho_dataset.MorphoDataset.TAGS]
         }
         if tag_mask:
-            batch_tags_masks = tag_mask[word_ids[train.FORMS], :]
+            batch_tags_masks = tag_mask[word_ids[morpho_dataset.MorphoDataset.FORMS], :]
             placeholder_dict.update({self.tag_mask: batch_tags_masks})
+        if w2v:
+            placeholder_dict.update({self.w2v: w2v[word_ids[morpho_dataset.MorphoDataset.FORMS], :]})
         return placeholder_dict
 
-    def train_epoch(self, train, batch_size, tag_mask):
+    def train_epoch(self, train, batch_size, tag_mask, w2v):
         while not train.epoch_finished():
             self.session.run(self.reset_metrics)
-            self.session.run([self.training, self.summaries["train"]], self._placeholder_dict(*train.next_batch(batch_size, including_charseqs=True), tag_mask))
+            self.session.run([self.training, self.summaries["train"]], self._placeholder_dict(*train.next_batch(batch_size, including_charseqs=True), tag_mask, w2v))
 
-    def evaluate(self, dataset_name, dataset, batch_size, tag_mask):
+    def evaluate(self, dataset_name, dataset, batch_size, tag_mask, w2v):
         self.session.run(self.reset_metrics)
         while not dataset.epoch_finished():
-            self.session.run([self.update_accuracy, self.update_loss], self._placeholder_dict(*dataset.next_batch(batch_size, including_charseqs=True), tag_mask))
+            self.session.run([self.update_accuracy, self.update_loss], self._placeholder_dict(*dataset.next_batch(batch_size, including_charseqs=True), tag_mask, w2v))
         return self.session.run([self.current_accuracy, self.summaries[dataset_name]])[0]
 
     def predict(self, dataset, batch_size):
@@ -176,11 +181,7 @@ if __name__ == "__main__":
 
     tag_mask = tm.get() if args.analyzer else None
 
-    # TODO: vlastni embeddingy jako inicializace
-    # if args.pretrained_w2v:
-    #     w2v_model = gensim.models.Word2Vec.load(args.pretrained_w2v)
-    #     for word_form in enumerate(train.factors[train.FORMS].words):
-    #         w2v_model[word_form]
+    w2v = np.load(args.pretrained_w2v) if args.pretrained_w2v else None
 
     # Construct the network
     network = Network(threads=args.threads)
@@ -189,8 +190,8 @@ if __name__ == "__main__":
 
     # Train
     for i in range(args.epochs):
-        network.train_epoch(train, args.batch_size, tag_mask)
-        network.evaluate("dev", dev, args.batch_size, tag_mask)
+        network.train_epoch(train, args.batch_size, tag_mask, w2v)
+        network.evaluate("dev", dev, args.batch_size, tag_mask, w2v)
 
     # Predict test data
     with open("{}/tagger_sota_test.txt".format(args.logdir), "w") as test_file:
