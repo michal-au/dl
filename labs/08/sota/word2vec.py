@@ -3,11 +3,21 @@ import gensim
 import logging
 import numpy as np
 
-import morpho_dataset
+# import morpho_dataset
 
 
 def extract_sentences(dataset):
     return dataset._factors[0].strings
+
+
+class WikiSentences:
+    def __init__(self, fname):
+        self.fname = fname
+
+    def __iter__(self):
+        with open(self.fname, "r") as f:
+            for sent in f:
+                yield sent.split()
 
 
 if __name__ == "__main__":
@@ -36,6 +46,7 @@ if __name__ == "__main__":
     )
     if not os.path.exists("data"): os.mkdir("data")
 
+    sentences = WikiSentences("data/sample.txt")
     # Load the data
     # train = morpho_dataset.MorphoDataset("czech-pdt-train.txt", shuffle_batches=False)
     # dev = morpho_dataset.MorphoDataset("czech-pdt-dev.txt", shuffle_batches=False)
@@ -43,24 +54,23 @@ if __name__ == "__main__":
     # sentences = extract_sentences(dev)
     # sentences.extend(extract_sentences(dev))
     # sentences.extend(extract_sentences(test))
+    model = gensim.models.Word2Vec(sentences, min_count=args.min_word_count, size=args.we_dim, workers=args.threads)
+    model.save(args.datafile)
+
+    # # TODO: vyzkouset tvorbu embed pro slova z trenovacich/dev/test dat:
+    # w2v_model = gensim.models.Word2Vec.load("data/word2vec.py-2018-04-24_195427-mwc=5,t=2,wd=128")
+    # print(w2v_model.wv.vector_size)
+    # len(train.factors[train.FORMS].words)
+    # w2v = np.random.random((len(train.factors[train.FORMS].words), args.we_dim))
+    # cnt, cnt2 = 0, 0
+    # for idx, word in enumerate(train.factors[train.FORMS].words):
+    #     # print(word, w2v_model[word] if word in w2v_model else )
+    #     if word in w2v_model:
+    #         w2v[idx] = w2v_model[word]
+    #         cnt2 += 1
+    #     else:
+    #         cnt += 1
     #
-    # model = gensim.models.Word2Vec(sentences, min_count=args.min_word_count, size=args.we_dim, workers=args.threads)
-    # model.save(args.datafile)
-
-    # TODO: vyzkouset tvorbu embed pro slova z trenovacich/dev/test dat:
-    w2v_model = gensim.models.Word2Vec.load("data/word2vec.py-2018-04-24_195427-mwc=5,t=2,wd=128")
-    print(w2v_model.wv.vector_size)
-    len(train.factors[train.FORMS].words)
-    w2v = np.random.random((len(train.factors[train.FORMS].words), args.we_dim))
-    cnt, cnt2 = 0, 0
-    for idx, word in enumerate(train.factors[train.FORMS].words):
-        # print(word, w2v_model[word] if word in w2v_model else )
-        if word in w2v_model:
-            w2v[idx] = w2v_model[word]
-            cnt2 += 1
-        else:
-            cnt += 1
-
-    print(w2v)
-    print(cnt, cnt2)
-    print(w2v.shape)
+    # print(w2v)
+    # print(cnt, cnt2)
+    # print(w2v.shape)
