@@ -22,8 +22,10 @@ class MorphoDataset:
     TAGS = 2
     FACTORS = 3
 
+    SUBTAG_COUNT = 14
+
     class _Factor:
-        def __init__(self, train=None, all_words=None):
+        def __init__(self, train=None, all_words=None, subtags=None):
             self.words_map = train.words_map if train else {'<pad>': 0, '<unk>': 1}
             self.words = train.words if train else ['<pad>', '<unk>']
             self.word_ids = []
@@ -38,7 +40,11 @@ class MorphoDataset:
             self.all_words = all_words.all_words if all_words else []
             self.all_word_ids = []
 
-    def __init__(self, filename, train=None, shuffle_batches=True, max_sentences=None, add_bow_eow=False, all_words=None):
+            self.subtags_map = subtags.subtags_map if subtags else [{} for _ in range(MorphoDataset.SUBTAG_COUNT)]
+            self.subtags = subtags.subtags if subtags else [[] for _ in range(MorphoDataset.SUBTAG_COUNT)]
+            self.subtag_ids = []
+
+    def __init__(self, filename, train=None, shuffle_batches=True, max_sentences=None, add_bow_eow=False, all_words=None, subtags=None):
         """Load dataset from file in vertical format.
 
         Arguments:
@@ -53,7 +59,11 @@ class MorphoDataset:
         # Create word maps
         self._factors = []
         for f in range(self.FACTORS):
-            self._factors.append(self._Factor(train=train._factors[f] if train else None, all_words=all_words if all_words and f==self.FORMS else None))
+            self._factors.append(
+                self._Factor(train=train._factors[f] if train else None,
+                             all_words=all_words if all_words and f==self.FORMS else None,
+                             subtags=subtags if subtags and f==self.TAGS else None)
+            )
 
         # Load the sentences
         with open(filename, "r", encoding="utf-8") as file:
@@ -70,6 +80,8 @@ class MorphoDataset:
                             factor.strings.append([])
                             if f == self.FORMS:
                                 factor.all_word_ids.append([])
+                            if f == self.TAGS:
+                                factor.subtag_ids.append([])
                         word = columns[f] if f < len(columns) else '<pad>'
                         factor.strings[-1].append(word)
 
@@ -97,6 +109,15 @@ class MorphoDataset:
                                 factor.all_words_map[word] = len(factor.all_words)
                                 factor.all_words.append(word)
                             factor.all_word_ids[-1].append(factor.all_words_map[word])
+                        if f == self.TAGS:
+                            # stags = word.split()
+                            factor.subtag_ids[-1].append([])
+                            subtags = ["".join(list(word)[:2])] + list(word)[2:]
+                            for idx, stag in enumerate(subtags):
+                                if stag not in factor.subtags_map[idx]:
+                                    factor.subtags_map[idx][stag] = len(factor.subtags[idx])
+                                    factor.subtags[idx].append(stag)
+                                factor.subtag_ids[-1][-1].append(factor.subtags_map[idx][stag])
                         if word not in factor.words_map:
                             if train:
                                 word = '<unk>'
@@ -109,6 +130,7 @@ class MorphoDataset:
                     in_sentence = False
                     if max_sentences is not None and len(self._factors[self.FORMS].word_ids) >= max_sentences:
                         break
+                    # exit()
 
         # Compute sentence lengths
         sentences = len(self._factors[self.FORMS].word_ids)
@@ -185,10 +207,15 @@ class MorphoDataset:
             batch_word_ids.append(np.zeros([batch_size, max_sentence_len], np.int32))
             for i in range(batch_size):
                 batch_word_ids[-1][i, 0:batch_sentence_lens[i]] = factor.word_ids[batch_perm[i]]
+
         batch_word_ids.append(np.zeros([batch_size, max_sentence_len], np.int32))
         for i in range(batch_size):
-            print(">", self._factors[self.FORMS].all_word_ids[batch_perm[i]])
             batch_word_ids[-1][i, 0:batch_sentence_lens[i]] = self._factors[self.FORMS].all_word_ids[batch_perm[i]]
+
+        batch_word_ids.append(np.zeros([batch_size, max_sentence_len, MorphoDataset.SUBTAG_COUNT], np.int32))
+        for i in range(batch_size):
+            for j in range(batch_sentence_lens[i]):
+                batch_word_ids[-1][i, j, :] = self._factors[self.TAGS].subtag_ids[batch_perm[i]][j]
 
         if not including_charseqs:
             return self._sentence_lens[batch_perm], batch_word_ids
