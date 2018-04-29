@@ -63,7 +63,7 @@ class Network:
             bw_cell = cell_constructor(args.rnn_cell_dim)
             rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_cell, bw_cell,
-                tf.layers.dropout(tf.nn.relu(rnn_output), 0.2),
+                tf.add_n([tf.layers.dropout(tf.nn.relu(rnn_output), 0.2), words_embedded]),
                 sequence_length=self.sentence_lens, dtype=tf.float32,
                 scope="BLSTM2"
             )
