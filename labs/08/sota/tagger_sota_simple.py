@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+python tagger_sota_simple.py --cle_dim 64 --cnne_filters 32 --epochs 3 --cnne_max 5 --rnn_cell_dim 512 --we_dim 256
+"""
 import numpy as np
 import tensorflow as tf
 import gensim
