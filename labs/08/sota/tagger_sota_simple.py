@@ -197,10 +197,10 @@ if __name__ == "__main__":
         network.evaluate("dev", dev, args.batch_size, tag_mask)
 
     # Predict test data
-    with open("{}/tagger_sota_test.txt".format(args.logdir), "w") as test_file:
+    with open("{}/tagger_sota_test.txt".format(args.logdir), "w", encoding='utf-8') as test_file:
         forms = test.factors[test.FORMS].strings
         tags = network.predict(test, args.batch_size)
         for s in range(len(forms)):
             for i in range(len(forms[s])):
-                print("{}\t_\t{}".format(forms[s][i], test.factors[test.TAGS].words[tags[s][i]]), file=test_file)
+                print("{}\t_\t{}".format(forms[s][i].encode('utf-8'), test.factors[test.TAGS].words[tags[s][i]]), file=test_file)
             print("", file=test_file)
