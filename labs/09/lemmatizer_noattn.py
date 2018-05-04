@@ -34,11 +34,17 @@ class Network:
 
             # Encoder
             # TODO: Generate source embeddings for source chars, of shape [source_chars, args.char_dim].
+            source_embeddings = tf.get_variable("source_embeddings", shape=[source_chars, args.char_dim])
 
             # TODO: Embed the self.source_seqs using the source embeddings.
+            source_seqs_embedded = tf.nn.embedding_lookup(source_embeddings, self.source_seqs)
 
             # TODO: Using a GRU with dimension args.rnn_dim, process the embedded self.source_seqs
             # using forward RNN and store the resulting states into `source_states`.
+            source_gru = tf.nn.rnn_cell.GRUCell(args.rnn_dim)
+            source_states = tf.nn.dynamic_rnn(
+                source_gru, source_seqs_embedded, sequence_length=self.source_seq_lens, scope="source_gru"
+            )
 
             # Index the unique words using self.source_ids and self.target_ids.
             sentence_mask = tf.sequence_mask(self.sentence_lens)
@@ -50,26 +56,30 @@ class Network:
 
             # Decoder
             # TODO: Generate target embeddings for target chars, of shape [target_chars, args.char_dim].
+            target_embeddings = tf.get_variable("target_embeddings", shape=[target_chars, args.char_dim])
 
             # TODO: Embed the target_seqs using the target embeddings.
+            target_seqs_embedded = tf.nn.embedding_lookup(target_embeddings, target_seqs)
 
             # TODO: Generate a decoder GRU with wimension args.rnn_dim.
+            target_gru = tf.nn.rnn_cell.GRUCell(args.rnn_dim)
 
             # TODO: Create a `decoder_layer` -- a fully connected layer with
             # target_chars neurons used in the decoder to classify into target characters.
+            decoder_layer = tf.layers.Dense(target_chars)
 
             # The DecoderTraining will be used during training. It will output logits for each
             # target character.
             class DecoderTraining(tf.contrib.seq2seq.Decoder):
                 @property
-                def batch_size(self): return # TODO: Return size of the batch, using for example source_states size
+                def batch_size(self): return source_states.get_shape().as_list()[0] # TODO: Return size of the batch, using for example source_states size
                 @property
                 def output_dtype(self): return tf.float32 # Type for logits of target characters
                 @property
                 def output_size(self): return target_chars # Length of logits for every output
 
                 def initialize(self, name=None):
-                    finished = # TODO: False if target_lens > 0, True otherwise
+                    finished = target_lens <= 0  # TODO: False if target_lens > 0, True otherwise
                     states = # TODO: Initial decoder state to use
                     inputs = # TODO: embedded BOW characters of shape [self.batch_size]. You can use
                              # tf.fill to generate BOWs of appropriate size.
